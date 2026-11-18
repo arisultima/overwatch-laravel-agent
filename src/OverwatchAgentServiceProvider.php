@@ -50,7 +50,12 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
     private function registerMiddleware(): void
     {
         $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
-            if (method_exists($kernel, 'pushMiddleware') && ! $kernel->hasMiddleware(RecordRequest::class)) {
+            // Neither method is on the Kernel contract; a custom kernel may lack them.
+            if (! method_exists($kernel, 'hasMiddleware') || ! method_exists($kernel, 'pushMiddleware')) {
+                return;
+            }
+
+            if (! $kernel->hasMiddleware(RecordRequest::class)) {
                 $kernel->pushMiddleware(RecordRequest::class);
             }
         });
