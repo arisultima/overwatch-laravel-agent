@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Tests;
 
 use Arisultima\OverwatchAgent\OverwatchAgentServiceProvider;
+use Arisultima\OverwatchAgent\Recording\Guard;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 /**
@@ -21,6 +22,15 @@ abstract class TestCase extends Orchestra
      */
     protected array $overwatch = [];
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The guard's pause lives for the whole process, so one test that
+        // trips it must not silence the next.
+        Guard::reset();
+    }
+
     protected function getPackageProviders($app): array
     {
         return [OverwatchAgentServiceProvider::class];
@@ -31,6 +41,7 @@ abstract class TestCase extends Orchestra
         $config = $app['config'];
 
         $config->set('app.debug', false);
+        $config->set('app.key', 'base64:'.base64_encode(str_repeat('k', 32)));
         $config->set('cache.default', 'array');
         $config->set('queue.default', 'sync');
         $config->set('logging.default', 'null');
@@ -53,5 +64,27 @@ abstract class TestCase extends Orchestra
         $this->overwatch = $overwatch;
 
         $this->reloadApplication();
+    }
+
+    /**
+     * Record on the array store ('cache') or on Redis ('redis'). Redis runs
+     * under a prefix of its own and its keys are deleted afterwards; the test
+     * is skipped when no Redis server answers. Returns the key prefix.
+     */
+    protected function useDriver(string $driver): string
+    {
+        if ($driver !== 'redis') {
+            return (string) config('cache.prefix');
+        }
+
+        if (! redisReachable()) {
+            $this->markTestSkipped('Redis is not reachable at REDIS_HOST.');
+        }
+
+        $prefix = useRedisCache();
+
+        $this->beforeApplicationDestroyed(fn () => forgetRedisKeys($prefix));
+
+        return $prefix;
     }
 }
