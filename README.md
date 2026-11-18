@@ -33,9 +33,9 @@ OVERWATCH_TOKEN=
 OVERWATCH_INSTANCE=
 ```
 
-`OVERWATCH_TOKEN` is the app token your Overwatch server issued for this app (it
-starts with `satapp_`). Until both the URL and the token are set the package
-does nothing at all: no listeners, no middleware, no scheduled task.
+`OVERWATCH_TOKEN` is the bearer token your Overwatch server issued for this
+app. Until both the URL and the token are set the package does nothing at all:
+no listeners, no middleware, no scheduled task.
 `OVERWATCH_ENABLED=false` switches it off the same way while keeping the token.
 
 **The scheduler must run.** Reports are sent by `overwatch:report`, which the
@@ -122,8 +122,7 @@ Everything in it, in plain words:
 - **Error groups per machine:** the exception class, the first frame in your own
   code (as a path relative to the app root, with its line; `artisan`,
   `public/index.php` and `server.php` do not count), a fingerprint of the
-  two and how often it happened. An in-app error recorder that uses the same
-  fingerprint can match its own captured errors to these groups.
+  two (sha256 of the class and that location) and how often it happened.
 - **Queues per machine:** for each queue name its jobs ran on, the jobs
   processed and failed and the slowest job in milliseconds.
 - **Versions:** a hash of `composer.lock` and every installed Composer package
@@ -145,9 +144,8 @@ report.
 One attempt a minute, 3 seconds to connect and 5 seconds in all, no retry and no
 redirect. Unsent minutes are kept and go with the next report the server takes;
 those older than 60 minutes are counted in the report's `dropped_minutes`. A
-report the server refuses for good (422 or 413) is not sent again: its minutes
-are counted as dropped and a warning is logged. A refused token (401) is logged
-once an hour. `overwatch:report` always exits 0, so a failed send never fails
+report answered with 422 or 413 is not sent again: its minutes are counted as
+dropped and a warning is logged. A 401 is logged once an hour. `overwatch:report` always exits 0, so a failed send never fails
 your scheduler.
 
 ## Several servers
@@ -156,8 +154,8 @@ Each machine is an instance with its own counters. The name is the hostname;
 set `OVERWATCH_INSTANCE` on each machine when hostnames are not stable
 (containers, autoscaling groups). Give every machine its own value: machines
 sharing one name, for example a value baked into an image, are merged into one
-instance and their counts mixed. Names are lowercased, because Overwatch
-compares them without case: `Web-1` and `web-1` are the same instance.
+instance and their counts mixed. Names are lowercased: `Web-1` and `web-1` are
+the same instance.
 
 - With a shared cache store (the same Redis for every machine), every machine's
   scheduler starts the report each minute, but only the one that takes the
@@ -190,8 +188,8 @@ counts twice.
 - **A down default cache stops the scheduler itself:** Laravel's `schedule:run`
   reads its own flags from the app's default cache store before any task runs,
   so while that store is down no scheduled task runs, this report included,
-  even when `OVERWATCH_CACHE_STORE` points elsewhere. Overwatch then sees the
-  app go quiet, which is the alert you want.
+  even when `OVERWATCH_CACHE_STORE` points elsewhere. No report goes out until
+  the store is back.
 - **Octane and other long-running servers:** request durations are measured
   from `LARAVEL_START` when it is defined, else from the package's middleware.
   In a worker that serves many requests neither may mark the true start of each
@@ -225,8 +223,8 @@ counts twice.
   the count stops at 1000.
 - Health probes time out only as fast as your app's own database, cache and
   Redis driver settings allow.
-- Distinct counts are per machine. A server that adds them up across machines
-  may count one account or address more than once, so treat a total as "up to".
+- Distinct counts are per machine. Added up across machines they may count one
+  account or address more than once, so treat such a total as "up to".
 
 ## Testing
 

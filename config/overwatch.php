@@ -13,7 +13,7 @@ return [
 
     /*
     | Your Overwatch server, for example https://overwatch.example.com, and the
-    | app token it issued (it starts with satapp_).
+    | bearer token it issued for this app.
     */
     'url' => env('OVERWATCH_URL'),
 

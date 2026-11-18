@@ -1,15 +1,17 @@
-# Overwatch app report, schema 1
+# App report, schema 1
 
-The single contract between the Laravel agent package (`arisultima/overwatch-laravel-agent`) and the Overwatch server that receives it. Both implementations cite this file; when they disagree, this file wins and the other is the bug. The package repo carries a copy as `docs/protocol.md`.
+What this package (`arisultima/overwatch-laravel-agent`) sends to the Overwatch server it reports to, and what it does with the answer.
 
 ## Transport
 
 - `POST {OVERWATCH_URL}/api/agent/v1/app-report`
-- Headers: `Authorization: Bearer satapp_<48 chars>`, `Content-Type: application/json`, `Content-Encoding: gzip`, `User-Agent: overwatch-laravel-agent/<version>`.
+- Headers: `Authorization: Bearer <token>` (the bearer token your server issued, sent as it is), `Content-Type: application/json`, `Content-Encoding: gzip`, `Accept: application/json`, `User-Agent: overwatch-laravel-agent/<version>`.
 - The body is the gzip of one UTF-8 JSON object, described below. The token is never in the URL.
-- One attempt per minute. Connect timeout 3 s, total timeout 5 s.
+- One attempt per minute, no retry and no redirect. Connect timeout 3 s, total timeout 5 s.
 
 ## Size caps (uncompressed JSON bytes)
+
+The package keeps every report within these caps.
 
 | Part | Cap |
 |---|---|
@@ -17,11 +19,11 @@ The single contract between the Laravel agent package (`arisultima/overwatch-lar
 | `versions` section alone | 196608 |
 | Whole body | 262144 |
 
-The package trims to fit in this order: `instances[].errors` beyond 20 groups, then `queue_depths` beyond 20, then the oldest `minutes` (counted into `dropped_minutes`). Every trimmed list sets its `*_truncated` count. The server refuses a body over a cap with 422.
+The package trims to fit in this order: `instances[].errors` beyond 20 groups, then `queue_depths` beyond 20, then the oldest `minutes` (counted into `dropped_minutes`). Every trimmed list sets its `*_truncated` count.
 
 ## Text limits
 
-Every text field is a non-empty string once surrounding whitespace is trimmed, and at most this many characters. A text field that is empty, not a string or longer is refused with 422, except in `versions.packages`, see Versions.
+The package sends every text field as a non-empty string: valid UTF-8, surrounding whitespace trimmed, cut to at most this many characters, and `"unknown"` where the value would be empty. `versions.packages` is the exception, see Versions.
 
 | Field | Max characters |
 |---|---|
@@ -41,17 +43,16 @@ Every text field is a non-empty string once surrounding whitespace is trimmed, a
 
 ## Responses and what the package does
 
-| Status | Meaning | Package |
-|---|---|---|
-| 202 `{"accepted": true}` | taken | mark the reported minutes sent |
-| 401 | unknown or revoked token | keep the minutes, log once an hour |
-| 422, 413 | schema unknown, body invalid or over a cap | mark sent (a resend cannot succeed), count the refused minutes into the next report's `dropped_minutes`, log a warning with the first error |
-| 429, 503 | slow down (Retry-After) | keep the minutes |
-| other, timeout, no connection | | keep the minutes |
+| Status | Package |
+|---|---|
+| 202 | mark the reported minutes sent |
+| 422, 413 | mark sent (a resend cannot succeed), count the refused minutes into the next report's `dropped_minutes`, log a warning with the first error message of the body |
+| 401 | keep the minutes, log once an hour |
+| anything else, timeout, no connection | keep the minutes and send them with the next report, a minute later |
 
-The package reads nothing else from a response. Kept minutes expire after 60 minutes; those lost are counted into the next report's `dropped_minutes`.
+Only 202 counts as accepted; any other 2xx is kept like the rest. The package reads nothing else from a response. Kept minutes expire after 60 minutes; those lost are counted into the next report's `dropped_minutes`.
 
-The package may send a minute the server already accepted: when a 202 is lost on the way back, when marking the minutes sent fails, when taking the report lock fails (that run sends but marks nothing), and on every `overwatch:test`. So the server stores minutes per (instance, minute) as replace-or-ignore, never add: a minute it already holds is replaced by the resent one or the resent one is ignored, and its counts are never added a second time.
+The package may send a minute again after a report carrying it was accepted: when a 202 is lost on the way back, when marking the minutes sent fails, when taking the report lock fails (that run sends but marks nothing), and on every `overwatch:test`.
 
 `dropped_minutes` may likewise repeat: it is cleared only once a report carrying it is accepted, so every report until then carries the same count again (plus any new losses). It counts instance-minutes, not wall minutes: one minute lost on three instances is 3.
 
@@ -61,9 +62,9 @@ The package may send a minute the server already accepted: when a 202 is lost on
 |---|---|---|
 | `schema` | int | `1` |
 | `package` | object | `{"name": string, "version": string}` |
-| `sent_at` | string | ISO 8601 UTC, seconds precision |
+| `sent_at` | string | ISO 8601 UTC, seconds precision, the reporting node's clock |
 | `reporter` | string | instance name of the node that built the report |
-| `window` | object | `{"from": string, "to": string}`, ISO 8601 UTC, whole minutes, `to` exclusive. A minute is reported only once it has been over for 10 s (the close grace), so `to` is at most the start of the minute that `sent_at` less 10 s falls in. The server reads `to` as sent and must not infer it from `sent_at` |
+| `window` | object | `{"from": string, "to": string}`, ISO 8601 UTC, whole minutes, `to` exclusive. A minute is reported only once it has been over for 10 s (the close grace), so `to` is at most the start of the minute that `sent_at` less 10 s falls in |
 | `dropped_minutes` | int | closed instance-minutes not delivered since the last accepted report, whether or not they had counts: expired unsent, trimmed, or in a refused report; repeated in every report until one is accepted |
 | `app` | object | see App |
 | `checks` | object | the health checks, see Checks |
@@ -73,7 +74,7 @@ The package may send a minute the server already accepted: when a 202 is lost on
 | `instances` | array | 1 to 50, see Instances |
 | `versions` | object or null | see Versions; null when not due |
 
-There is no app name or id anywhere: the token says which app it is.
+There is no app name or id anywhere; the bearer token is the only identification the package sends.
 
 ## App
 
@@ -81,11 +82,9 @@ There is no app name or id anywhere: the token says which app it is.
 {"environment": "production", "debug": false, "php": "8.4.27", "laravel": "13.4.0", "timezone": "Asia/Kuala_Lumpur"}
 ```
 
-The server orders reports by when it received them, never by `sent_at`. It accepts the report but writes no minute dated more than 2 days before it received the report or more than 5 minutes after, so a node whose clock is far out loses those minutes rather than skewing the series.
-
 ## Checks
 
-Exactly the field names of the `app_health` pull check, so one evaluator reads both. Every check is either `{"ok": true, ...fields}` or `{"ok": false, "error": string}`, where `error` is the short class name of what was thrown (for example `QueryException`), never the exception message.
+Every check is either `{"ok": true, ...fields}` or `{"ok": false, "error": string}`, where `error` is the short class name of what was thrown (for example `QueryException`), never the exception message.
 
 | Key | Present | Fields when ok |
 |---|---|---|
@@ -128,18 +127,16 @@ One object per machine whose counts are in this report.
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | string | `OVERWATCH_INSTANCE`, else the hostname; at most 100 chars; once per report, compared without case (a repeat is refused with 422) |
+| `name` | string | `OVERWATCH_INSTANCE`, else the hostname; lowercased, at most 100 chars; each name once per report |
 | `hostname` | string | `gethostname()` of that machine |
 | `stamped_at` | string or null | when that machine last stamped its local probes |
-| `quiet` | bool | no stamp for 10 minutes |
+| `quiet` | bool | that machine has not stamped for 10 minutes |
 | `local` | object or null | `{"storage": {checks.storage shape}, "php": string}` from the last stamp |
-| `minutes` | array | at most 60, oldest first, each `at` once (a repeat is refused with 422), see Minute |
+| `minutes` | array | at most 60, oldest first, each `at` once, see Minute |
 | `minutes_truncated` | int | |
 | `errors` | array | groups in the window, at most 20, largest first |
 | `errors_truncated` | int | groups left out |
 | `queues` | array | per queue name in the window: `{"name": string, "processed": int, "failed": int, "slowest_ms": int}`, at most 20 |
-
-The server keeps at most 200 instances per app. Past that, an instance of a name it has not seen is left out of the report, minutes and all, and counted in the server's log; the report is still accepted (202) and the known instances are written. The server calls an instance quiet when `quiet` is true or no accepted report has named it for 10 minutes.
 
 ### Minute
 
@@ -190,7 +187,7 @@ The server keeps at most 200 instances per app. Past that, an instance of a name
 {"fingerprint": "9f2c...64 hex", "class": "Illuminate\\Database\\QueryException", "location": "app/Services/Billing.php:88", "count": 4}
 ```
 
-`fingerprint` is `sha256(class . '|' . location)`, hex, the same value `sat/diagnostics` computes for the same exception, so the two can be matched. `location` is the first frame inside the app, relative to the app root; `"unknown"` when there is none. Frames under `vendor/` and the entry scripts (`artisan`, `public/index.php`, `server.php`) are not inside the app: every process starts at one, so a failing queued closure would otherwise group at `artisan:16` with every other. `sat/diagnostics` counts the entry scripts as in-app, so for an exception whose only in-app frame is one of them the two fingerprints differ. No message, trace, request, user or input.
+`fingerprint` is `sha256(class . '|' . location)`, hex. `location` is the first frame inside the app, relative to the app root; `"unknown"` when there is none. Frames under `vendor/` and the entry scripts (`artisan`, `public/index.php`, `server.php`) are not inside the app: every process starts at one, so a failing queued closure would otherwise group at `artisan:16` with every other. An anonymous class is named up to and including `@anonymous`. No message, trace, request, user or input.
 
 ## Versions
 
@@ -200,7 +197,7 @@ Sent at most every 6 hours, or at once when the lock hash changes; otherwise `nu
 {"lock_hash": "sha256 hex of composer.lock", "packages": [["laravel/framework", "v13.4.0", false]], "packages_truncated": 0}
 ```
 
-`packages`: `[name, pretty version, is_dev]`, at most 1500, sorted by name. A row that is not such a triple, or has a field empty, null, of the wrong type or past its text limit, is skipped and counted with `packages_truncated`; it never refuses the report. More than 1500 rows, `packages` not a list or `lock_hash` not 64 lowercase hex characters is refused with 422.
+`lock_hash` is the sha256 of `composer.lock` (of the installed package list when there is none), 64 lowercase hex characters. `packages`: `[name, pretty version, is_dev]`, at most 1500, sorted by name. The package leaves out a package whose name or version is empty or over 255 characters rather than cut it, and counts it in `packages_truncated` together with any rows past 1500 or cut to fit the `versions` cap.
 
 ## Never in a report
 
