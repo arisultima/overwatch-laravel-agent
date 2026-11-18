@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Arisultima\OverwatchAgent;
 
+use Arisultima\OverwatchAgent\Console\InstallCommand;
 use Arisultima\OverwatchAgent\Console\ReportCommand;
+use Arisultima\OverwatchAgent\Console\TestCommand;
 use Arisultima\OverwatchAgent\Http\RecordRequest;
 use Arisultima\OverwatchAgent\Probes\InstanceStamp;
 use Arisultima\OverwatchAgent\Recording\AuthRecorder;
@@ -58,6 +60,9 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../config/overwatch.php' => config_path('overwatch.php'),
             ], 'overwatch-config');
+
+            // Registered whatever the config, so they can say what is missing.
+            $this->commands([InstallCommand::class, TestCommand::class]);
         }
 
         // Without a token, or with reporting switched off, the package stays

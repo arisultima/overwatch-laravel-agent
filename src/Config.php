@@ -17,6 +17,31 @@ final class Config
         return (bool) config('overwatch.enabled', true) && self::token() !== '';
     }
 
+    /**
+     * What stops reports going out, one plain sentence each, naming the
+     * setting to fix; empty when nothing does. Never quotes a value.
+     *
+     * @return list<string>
+     */
+    public static function missing(): array
+    {
+        $missing = [];
+
+        if (! (bool) config('overwatch.enabled', true)) {
+            $missing[] = 'OVERWATCH_ENABLED is false, so nothing is recorded or sent. Remove it from .env, or set it to true.';
+        }
+
+        if (self::token() === '') {
+            $missing[] = 'OVERWATCH_TOKEN is not set. Add the app token your Overwatch server issued to .env.';
+        }
+
+        if (self::url() === '') {
+            $missing[] = 'OVERWATCH_URL is not set. Add the address of your Overwatch server to .env, for example https://overwatch.example.com.';
+        }
+
+        return $missing;
+    }
+
     public static function url(): string
     {
         return rtrim(self::string('overwatch.url') ?? '', '/');

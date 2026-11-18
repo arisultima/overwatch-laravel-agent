@@ -150,7 +150,9 @@ final class ReportCommand extends Command
 
         if ($result->isRejected()) {
             // Counted before the minutes are marked, so a run that dies in
-            // between still reports the loss.
+            // between still reports the loss. The trade-off: a run that dies
+            // between addDropped and markSent re-sends and re-counts the
+            // refused minutes.
             Progress::addDropped(self::lost($report, $sent));
         }
 
