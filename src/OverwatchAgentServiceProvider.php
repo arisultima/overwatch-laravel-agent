@@ -23,9 +23,11 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Events\JobReleasedAfterException;
 use Illuminate\Support\ServiceProvider;
 
 final class OverwatchAgentServiceProvider extends ServiceProvider
@@ -92,8 +94,10 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
 
     /**
      * Event listeners that count into the minute buckets. Each recorder is a
-     * singleton resolved on its first event, and the listeners are closures,
-     * so a query costs one comparison until it is slow.
+     * singleton resolved on its first event, and the listeners are closures
+     * (a class-string listener is reflected on every dispatch). A query that
+     * is not slow costs a container lookup and one comparison against the
+     * threshold the recorder read once.
      */
     private function registerRecorders(): void
     {
@@ -112,6 +116,8 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
         $events->listen(JobProcessing::class, static fn (JobProcessing $event) => $app->make(QueueRecorder::class)->processing($event));
         $events->listen(JobProcessed::class, static fn (JobProcessed $event) => $app->make(QueueRecorder::class)->processed($event));
         $events->listen(JobFailed::class, static fn (JobFailed $event) => $app->make(QueueRecorder::class)->failed($event));
+        $events->listen(JobExceptionOccurred::class, static fn (JobExceptionOccurred $event) => $app->make(QueueRecorder::class)->exceptionOccurred($event));
+        $events->listen(JobReleasedAfterException::class, static fn (JobReleasedAfterException $event) => $app->make(QueueRecorder::class)->released($event));
 
         $this->callAfterResolving(ExceptionHandler::class, static function (ExceptionHandler $handler) use ($app): void {
             ExceptionRecorder::attach($handler, static fn (): ExceptionRecorder => $app->make(ExceptionRecorder::class));

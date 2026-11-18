@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Recording;
 
 use Illuminate\Contracts\Queue\Job;
+use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Events\JobReleasedAfterException;
 use Throwable;
 
 /**
@@ -21,9 +23,9 @@ use Throwable;
 final class QueueRecorder
 {
     /**
-     * Starts kept at most. A job released after an exception never finishes
-     * in that attempt, so its start would otherwise stay forever in a
-     * long-running worker.
+     * Starts kept at most, as a backstop: every path that ends an attempt
+     * clears its start, but a path a future framework adds must not grow
+     * the map forever in a long-running worker.
      */
     private const MAX_STARTED = 100;
 
@@ -79,6 +81,44 @@ final class QueueRecorder
         } catch (Throwable) {
             // Recording never throws into the app.
         }
+    }
+
+    /**
+     * The worker fails a job before it raises this event, and releases it
+     * after (JobReleasedAfterException); the sync driver raises it before it
+     * fails the job. So the start is cleared here only when the attempt is
+     * already settled (deleted, released or failed), and is otherwise left
+     * for the failure, which needs it, or the release, which clears it.
+     */
+    public function exceptionOccurred(JobExceptionOccurred $event): void
+    {
+        try {
+            $job = $event->job;
+
+            if ($job->isDeleted() || $job->isReleased() || $job->hasFailed()) {
+                unset($this->started[spl_object_id($job)]);
+            }
+        } catch (Throwable) {
+            // Recording never throws into the app.
+        }
+    }
+
+    /**
+     * Released to run again: this attempt is not counted.
+     */
+    public function released(JobReleasedAfterException $event): void
+    {
+        unset($this->started[spl_object_id($event->job)]);
+    }
+
+    /**
+     * How many job starts are held. For tests.
+     *
+     * @internal
+     */
+    public function pending(): int
+    {
+        return count($this->started);
     }
 
     private function finish(Job $job, bool $failed): void

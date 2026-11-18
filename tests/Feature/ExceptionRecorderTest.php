@@ -4,54 +4,27 @@ declare(strict_types=1);
 
 use Arisultima\OverwatchAgent\Recording\ErrorDetails;
 use Arisultima\OverwatchAgent\Support\Fingerprint;
-use Illuminate\Support\Facades\File;
 
 /**
- * A fixture under the Testbench app root, so its frames count as in-app.
- * Written for the test and removed after it.
+ * The package root, used as the app's base path in this file so the fixture
+ * that ships in tests/Fixtures is in-app and nothing is written at run time.
  */
-const THROWER = <<<'PHP'
-<?php
-
-namespace OverwatchFixtures;
-
-function throwHere(): never
+function packageRoot(): string
 {
-    throw new \RuntimeException('user bob@example.com');
+    return dirname(__DIR__, 2);
 }
-
-function callVendor(): mixed
-{
-    return app()->make('Overwatch\Fixtures\Missing');
-}
-PHP;
 
 function throwerPath(): string
 {
-    return base_path('tests/Fixtures/Thrower.php');
+    return packageRoot().'/tests/Fixtures/Thrower.php';
 }
-
-beforeEach(function (): void {
-    $this->freezeTime();
-
-    if (! function_exists('OverwatchFixtures\throwHere')) {
-        File::ensureDirectoryExists(dirname(throwerPath()));
-        File::put(throwerPath(), THROWER);
-        require throwerPath();
-    }
-});
-
-afterAll(function (): void {
-    @unlink(throwerPath());
-    @rmdir(dirname(throwerPath()));
-});
 
 /**
  * The line of a fixture statement.
  */
 function throwerLine(string $needle): int
 {
-    foreach (explode("\n", THROWER) as $index => $line) {
+    foreach (file(throwerPath()) as $index => $line) {
         if (str_contains($line, $needle)) {
             return $index + 1;
         }
@@ -59,6 +32,13 @@ function throwerLine(string $needle): int
 
     throw new LogicException('No line holds '.$needle);
 }
+
+beforeEach(function (): void {
+    require_once throwerPath();
+
+    $this->app->setBasePath(packageRoot());
+    $this->freezeTime();
+});
 
 it('fingerprints the first in-app frame', function (): void {
     try {
@@ -83,8 +63,8 @@ it('walks the trace past vendor frames to the app', function (): void {
 
     $location = 'tests/Fixtures/Thrower.php:'.throwerLine('app()->make');
 
-    // Thrown inside the framework, which lives outside the app root here.
-    expect($e->getFile())->not->toStartWith(base_path())
+    // Thrown inside the framework, under the app's vendor directory.
+    expect($e->getFile())->toStartWith(base_path('vendor').DIRECTORY_SEPARATOR)
         ->and(Fingerprint::for($e, base_path()))->toBe([
             'fingerprint' => hash('sha256', $e::class.'|'.$location),
             'class' => $e::class,
@@ -106,7 +86,7 @@ it('skips frames under the app vendor directory', function (): void {
 });
 
 it('says unknown when no frame is in the app', function (): void {
-    // Thrown from this test file, which is outside the Testbench app root.
+    // Thrown from this test file, which is outside that root.
     $e = new LogicException('nothing in app');
 
     expect(Fingerprint::for($e, base_path().'/nowhere'))->toBe([
@@ -170,4 +150,18 @@ it('counts nothing when disabled', function (): void {
     report(new RuntimeException('user bob@example.com'));
 
     expect(countedNow())->toBe([]);
+});
+
+it('names an anonymous exception class without its file path', function (): void {
+    report(new class('user bob@example.com') extends RuntimeException {});
+
+    $location = 'tests/Feature/ExceptionRecorderTest.php:'.(__LINE__ - 2);
+    $fingerprint = hash('sha256', 'RuntimeException@anonymous|'.$location);
+
+    expect(countedNow())->toBe(['error.'.$fingerprint => 1, 'errors.total' => 1])
+        ->and(app(ErrorDetails::class)->of([$fingerprint]))->toBe([
+            $fingerprint => ['class' => 'RuntimeException@anonymous', 'location' => $location],
+        ])
+        ->and(arrayStoreHolds(__FILE__))->toBeFalse()
+        ->and(arrayStoreHolds('bob@example.com'))->toBeFalse();
 });

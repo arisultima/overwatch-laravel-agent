@@ -21,6 +21,12 @@ final class QueryRecorder
      */
     private bool $recording = false;
 
+    /**
+     * The slow threshold in ms, read from config on the first query and kept,
+     * so every later query costs one comparison.
+     */
+    private ?int $thresholdMs = null;
+
     public function __construct(private readonly Recorder $recorder) {}
 
     public function handle(QueryExecuted $event): void
@@ -32,7 +38,7 @@ final class QueryRecorder
         $this->recording = true;
 
         try {
-            if ($event->time >= Config::slowQueryMs()) {
+            if ($event->time >= ($this->thresholdMs ??= Config::slowQueryMs())) {
                 $this->recorder->count('db.slow_queries');
             }
         } catch (Throwable) {

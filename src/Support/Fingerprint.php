@@ -18,12 +18,14 @@ final class Fingerprint
 {
     public const UNKNOWN = 'unknown';
 
+    private const ANONYMOUS = '@anonymous';
+
     /**
      * @return array{fingerprint: string, class: string, location: string}
      */
     public static function for(Throwable $e, string $basePath): array
     {
-        $class = $e::class;
+        $class = self::className($e);
         $location = self::location($e, $basePath);
 
         return [
@@ -31,6 +33,23 @@ final class Fingerprint
             'class' => $class,
             'location' => $location,
         ];
+    }
+
+    /**
+     * The class name, with an anonymous class cut right after "@anonymous".
+     * PHP names one "RuntimeException@anonymous", a NUL byte, then the
+     * absolute path and line where it is declared, which would put a server
+     * path in the report and change the fingerprint with every release
+     * directory. The cut name is both stored and hashed, so for anonymous
+     * classes only this fingerprint knowingly differs from sat/diagnostics,
+     * which hashes the raw name.
+     */
+    private static function className(Throwable $e): string
+    {
+        $class = $e::class;
+        $at = strpos($class, self::ANONYMOUS);
+
+        return $at === false ? $class : substr($class, 0, $at + strlen(self::ANONYMOUS));
     }
 
     /**
