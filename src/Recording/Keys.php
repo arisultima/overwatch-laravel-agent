@@ -55,6 +55,24 @@ final class Keys
     }
 
     /**
+     * The last minute of one instance a report covered and the server
+     * took (or refused for good). Kept without expiry.
+     */
+    public static function progress(string $instance): string
+    {
+        return 'overwatch:sent:'.self::segment($instance);
+    }
+
+    /**
+     * Minutes lost since the last accepted report, beyond those the next
+     * report works out itself. Kept without expiry.
+     */
+    public static function dropped(): string
+    {
+        return 'overwatch:dropped';
+    }
+
+    /**
      * A name as a key segment. Plain names stay readable; anything with
      * spaces, colons, braces or other characters some stores refuse (or over
      * 100 characters) becomes a hash of itself.

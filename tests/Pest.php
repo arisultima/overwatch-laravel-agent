@@ -143,3 +143,18 @@ function arrayStoreHolds(string $needle): bool
 
     return str_contains(serialize($storage), $needle);
 }
+
+/**
+ * The full example report in docs/protocol.md, decoded.
+ *
+ * @return array<string, mixed>
+ */
+function protocolExample(): array
+{
+    $doc = (string) file_get_contents(__DIR__.'/../docs/protocol.md');
+    $section = substr($doc, (int) strpos($doc, '## Full example'));
+
+    preg_match('/```json\n(.*?)\n```/s', $section, $match);
+
+    return json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
+}
