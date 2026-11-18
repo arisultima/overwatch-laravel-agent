@@ -121,6 +121,17 @@ it('fills a minute from its counters, histogram, distinct sets, errors and queue
         ->and($built['sent'])->toBe(['web-1' => '202611181306']);
 });
 
+it('keeps the close grace in the protocol example', function () {
+    $example = protocolExample();
+    $sentAt = Carbon::parse($example['sent_at']);
+    $latest = $sentAt->copy()->subSeconds(ReportBuilder::CLOSE_GRACE_SECONDS)->startOfMinute();
+
+    expect(Carbon::parse($example['window']['to'])->lessThanOrEqualTo($latest))->toBeTrue();
+
+    // The builder gives the same window end at that moment.
+    expect(app(ReportBuilder::class)->build($sentAt)['report']['window']['to'])->toBe($example['window']['to']);
+});
+
 it('fills the top level from the probes', function () {
     as_instance('worker-1');
     at('13:05:10');

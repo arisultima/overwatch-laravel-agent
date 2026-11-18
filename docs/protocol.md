@@ -19,6 +19,26 @@ The single contract between the Laravel agent package (`arisultima/overwatch-lar
 
 The package trims to fit in this order: `instances[].errors` beyond 20 groups, then `queue_depths` beyond 20, then the oldest `minutes` (counted into `dropped_minutes`). Every trimmed list sets its `*_truncated` count. The server refuses a body over a cap with 422.
 
+## Text limits
+
+Every text field is a non-empty string once surrounding whitespace is trimmed, and at most this many characters. A text field that is empty, not a string or longer is refused with 422, except in `versions.packages`, see Versions.
+
+| Field | Max characters |
+|---|---|
+| `package.name`, `package.version` | 255 |
+| `reporter` | 100 |
+| `app.environment`, `app.php`, `app.laravel`, `app.timezone` | 64 |
+| `error` of a failed check, in `checks` and in `instances[].local.storage` | 255 |
+| `checks.queue.driver`, `checks.horizon.status` | 64 |
+| `queue_depths[].connection` | 64 |
+| `queue_depths[].name` | 255 |
+| `instances[].name` | 100 |
+| `instances[].hostname` | 255 |
+| `instances[].local.php` | 64 |
+| `instances[].errors[].class`, `instances[].errors[].location` | 512 |
+| `instances[].queues[].name` | 255 |
+| `versions.packages[]` name and pretty version | 255 |
+
 ## Responses and what the package does
 
 | Status | Meaning | Package |
@@ -31,6 +51,10 @@ The package trims to fit in this order: `instances[].errors` beyond 20 groups, t
 
 The package reads nothing else from a response. Kept minutes expire after 60 minutes; those lost are counted into the next report's `dropped_minutes`.
 
+The package may send a minute the server already accepted: when a 202 is lost on the way back, when marking the minutes sent fails, when the report lock cannot be taken (that run marks nothing), and on every `overwatch:test`. So the server stores minutes per (instance, minute) as replace-or-ignore, never add: a minute it already holds is replaced by the resent one or the resent one is ignored, and its counts are never added a second time.
+
+`dropped_minutes` may likewise repeat: it is cleared only once a report carrying it is accepted, so every report until then carries the same count again (plus any new losses). It counts instance-minutes, not wall minutes: one minute lost on three instances is 3.
+
 ## Top level
 
 | Field | Type | Notes |
@@ -39,8 +63,8 @@ The package reads nothing else from a response. Kept minutes expire after 60 min
 | `package` | object | `{"name": string, "version": string}` |
 | `sent_at` | string | ISO 8601 UTC, seconds precision |
 | `reporter` | string | instance name of the node that built the report |
-| `window` | object | `{"from": string, "to": string}`, ISO 8601 UTC, whole minutes, `to` exclusive |
-| `dropped_minutes` | int | closed minutes not delivered since the last accepted report, whether or not they had counts: expired unsent, trimmed, or in a refused report |
+| `window` | object | `{"from": string, "to": string}`, ISO 8601 UTC, whole minutes, `to` exclusive. A minute is reported only once it has been over for 10 s (the close grace), so `to` is at most the start of the minute that `sent_at` less 10 s falls in. The server reads `to` as sent and must not infer it from `sent_at` |
+| `dropped_minutes` | int | closed instance-minutes not delivered since the last accepted report, whether or not they had counts: expired unsent, trimmed, or in a refused report; repeated in every report until one is accepted |
 | `app` | object | see App |
 | `checks` | object | the health checks, see Checks |
 | `queue_depths` | array | see Queues |
@@ -102,12 +126,12 @@ One object per machine whose counts are in this report.
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | string | `OVERWATCH_INSTANCE`, else the hostname; at most 100 chars |
+| `name` | string | `OVERWATCH_INSTANCE`, else the hostname; at most 100 chars; once per report, compared without case (a repeat is refused with 422) |
 | `hostname` | string | `gethostname()` of that machine |
 | `stamped_at` | string or null | when that machine last stamped its local probes |
 | `quiet` | bool | no stamp for 10 minutes |
 | `local` | object or null | `{"storage": {checks.storage shape}, "php": string}` from the last stamp |
-| `minutes` | array | at most 60, oldest first, see Minute |
+| `minutes` | array | at most 60, oldest first, each `at` once (a repeat is refused with 422), see Minute |
 | `minutes_truncated` | int | |
 | `errors` | array | groups in the window, at most 20, largest first |
 | `errors_truncated` | int | groups left out |
@@ -172,7 +196,7 @@ Sent at most every 6 hours, or at once when the lock hash changes; otherwise `nu
 {"lock_hash": "sha256 hex of composer.lock", "packages": [["laravel/framework", "v13.4.0", false]], "packages_truncated": 0}
 ```
 
-`packages`: `[name, pretty version, is_dev]`, at most 1500, sorted by name.
+`packages`: `[name, pretty version, is_dev]`, at most 1500, sorted by name. A row that is not such a triple, or has a field empty, null, of the wrong type or past its text limit, is skipped and counted with `packages_truncated`; it never refuses the report. More than 1500 rows, `packages` not a list or `lock_hash` not 64 lowercase hex characters is refused with 422.
 
 ## Never in a report
 
@@ -184,7 +208,7 @@ Email addresses, user ids or names, client IP addresses, URLs or paths with quer
 {
   "schema": 1,
   "package": {"name": "arisultima/overwatch-laravel-agent", "version": "0.1.0"},
-  "sent_at": "2026-11-18T13:07:02Z",
+  "sent_at": "2026-11-18T13:07:12Z",
   "reporter": "worker-1",
   "window": {"from": "2026-11-18T13:05:00Z", "to": "2026-11-18T13:07:00Z"},
   "dropped_minutes": 0,
