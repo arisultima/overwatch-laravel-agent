@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Arisultima\OverwatchAgent;
 
+use Arisultima\OverwatchAgent\Console\ReportCommand;
 use Arisultima\OverwatchAgent\Http\RecordRequest;
 use Arisultima\OverwatchAgent\Probes\InstanceStamp;
 use Arisultima\OverwatchAgent\Recording\AuthRecorder;
@@ -68,6 +69,7 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
         $this->registerRecorders();
         $this->registerStamps();
         $this->registerMiddleware();
+        $this->registerCommand();
         $this->registerSchedule();
     }
 
@@ -258,6 +260,16 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
                 $kernel->pushMiddleware(RecordRequest::class);
             }
         });
+    }
+
+    /**
+     * The report command the schedule runs; console only.
+     */
+    private function registerCommand(): void
+    {
+        if ($this->app->runningInConsole()) {
+            $this->commands([ReportCommand::class]);
+        }
     }
 
     /**

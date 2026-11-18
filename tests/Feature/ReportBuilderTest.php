@@ -12,54 +12,11 @@ use Arisultima\OverwatchAgent\Support\Package;
 use Illuminate\Support\Carbon;
 
 /**
- * Move the clock to a UTC moment on 2026-11-18, given as H:i:s.
- */
-function at(string $time): Carbon
-{
-    test()->travelTo(Carbon::parse('2026-11-18 '.$time, 'UTC'));
-
-    return Carbon::now();
-}
-
-/**
- * Record as this instance from now on, with a fresh process's statics.
- */
-function as_instance(string $name): void
-{
-    config(['overwatch.instance' => $name]);
-    InstanceStamp::reset();
-}
-
-/**
  * @return array{report: array<string, mixed>, sent: array<string, string>}
  */
 function buildAt(string $time): array
 {
     return app(ReportBuilder::class)->build(at($time));
-}
-
-/**
- * @param  array<string, mixed>  $report
- * @return array<string, mixed>
- */
-function instanceIn(array $report, string $name): array
-{
-    foreach ($report['instances'] as $instance) {
-        if ($instance['name'] === $name) {
-            return $instance;
-        }
-    }
-
-    throw new RuntimeException('No instance '.$name.' in the report.');
-}
-
-/**
- * @param  array<string, mixed>  $instance
- * @return list<string>
- */
-function minutesOf(array $instance): array
-{
-    return array_column($instance['minutes'], 'at');
 }
 
 it('builds a report that matches the protocol example keys', function () {

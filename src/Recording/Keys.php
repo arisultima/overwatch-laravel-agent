@@ -73,6 +73,24 @@ final class Keys
     }
 
     /**
+     * The lock one report run holds while it builds, sends and marks, so two
+     * nodes sharing the overwatch store never send the same minutes.
+     */
+    public static function reportLock(): string
+    {
+        return 'overwatch:report';
+    }
+
+    /**
+     * Set for an hour after a refused token is logged, so the log says it
+     * once an hour, not once a minute.
+     */
+    public static function unauthorizedLogged(): string
+    {
+        return 'overwatch:unauthorized-logged';
+    }
+
+    /**
      * A name as a key segment. Plain names stay readable; anything with
      * spaces, colons, braces or other characters some stores refuse (or over
      * 100 characters) becomes a hash of itself.
