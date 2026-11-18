@@ -249,3 +249,46 @@ it('counts on a handler that replaces the app handler after boot', function (): 
 
     expect(countedNow()['errors.total'])->toBe(1);
 });
+
+it('does not take an entry script as the location', function (string $script): void {
+    $e = new RuntimeException('x');
+    $trace = new ReflectionProperty(Exception::class, 'trace');
+
+    // A queued closure: its code is evaluated from a stream, then the
+    // framework under vendor runs it, and the worker started at artisan.
+    $trace->setValue($e, [
+        ['file' => base_path('vendor/laravel/framework/src/Illuminate/Queue/CallQueuedClosure.php'), 'line' => 40],
+        ['file' => base_path($script), 'line' => 16],
+    ]);
+    (new ReflectionProperty(Exception::class, 'file'))->setValue($e, 'closure://function () { throw new RuntimeException; }');
+    (new ReflectionProperty(Exception::class, 'line'))->setValue($e, 3);
+
+    expect(Fingerprint::for($e, base_path())['location'])->toBe('unknown');
+
+    // An in-app frame below the entry script still wins.
+    $trace->setValue($e, [
+        ['file' => base_path('app/Jobs/Billing.php'), 'line' => 21],
+        ['file' => base_path($script), 'line' => 16],
+    ]);
+
+    expect(Fingerprint::for($e, base_path())['location'])->toBe('app/Jobs/Billing.php:21');
+
+    // Thrown in the entry script itself.
+    (new ReflectionProperty(Exception::class, 'file'))->setValue($e, base_path($script));
+    $trace->setValue($e, []);
+
+    expect(Fingerprint::for($e, base_path())['location'])->toBe('unknown');
+})->with(['artisan', 'public/index.php', 'server.php']);
+
+it('keeps other files of the same names in the app', function (): void {
+    $e = new RuntimeException('x');
+    (new ReflectionProperty(Exception::class, 'trace'))->setValue($e, []);
+    (new ReflectionProperty(Exception::class, 'file'))->setValue($e, base_path('app/Console/artisan'));
+    (new ReflectionProperty(Exception::class, 'line'))->setValue($e, 7);
+
+    expect(Fingerprint::for($e, base_path())['location'])->toBe('app/Console/artisan:7');
+
+    (new ReflectionProperty(Exception::class, 'file'))->setValue($e, base_path('resources/public/index.php'));
+
+    expect(Fingerprint::for($e, base_path())['location'])->toBe('resources/public/index.php:7');
+});

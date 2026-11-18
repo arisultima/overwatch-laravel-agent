@@ -120,7 +120,8 @@ Everything in it, in plain words:
   address or account is kept in your cache, never the value, and only the counts
   are sent.
 - **Error groups per machine:** the exception class, the first frame in your own
-  code (as a path relative to the app root, with its line), a fingerprint of the
+  code (as a path relative to the app root, with its line; `artisan`,
+  `public/index.php` and `server.php` do not count), a fingerprint of the
   two and how often it happened. An in-app error recorder that uses the same
   fingerprint can match its own captured errors to these groups.
 - **Queues per machine:** for each queue name its jobs ran on, the jobs

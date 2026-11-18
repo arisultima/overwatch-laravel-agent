@@ -9,7 +9,8 @@ use Throwable;
 /**
  * What makes two exceptions the same problem: the class and the first frame
  * in the app's own code. The same value sat/diagnostics computes, so an error
- * group in a report can be matched to its captured events there.
+ * group in a report can be matched to its captured events there; where the
+ * two differ (anonymous classes, entry scripts) it says so below.
  *
  * Only the class, the file paths and the line numbers of the trace are read;
  * never the message or the frame arguments.
@@ -19,6 +20,15 @@ final class Fingerprint
     public const UNKNOWN = 'unknown';
 
     private const ANONYMOUS = '@anonymous';
+
+    /**
+     * The app's entry scripts, relative to its root. Every console process
+     * starts at artisan and every request at public/index.php (server.php on
+     * older apps), so as a location they name no problem: a failing queued
+     * closure, whose code runs from a stream, would otherwise group at
+     * artisan:16 with every other failing closure.
+     */
+    private const ENTRY_SCRIPTS = ['artisan', 'public/index.php', 'server.php'];
 
     /**
      * @return array{fingerprint: string, class: string, location: string}
@@ -83,9 +93,14 @@ final class Fingerprint
 
     /**
      * The path relative to the app root when the file is in the app's own
-     * code: under the root and not under a vendor/ directory there. Judged on
-     * the relative path, so an app deployed below a folder called vendor
-     * still counts.
+     * code: under the root, not under a vendor/ directory there and not one
+     * of the entry scripts. Judged on the relative path, so an app deployed
+     * below a folder called vendor still counts.
+     *
+     * sat/diagnostics counts the entry scripts as in-app, so where one of
+     * them is the only in-app frame the two fingerprints differ: here the
+     * location falls to "unknown" (or a deeper in-app frame), there it is the
+     * entry script.
      */
     private static function inApp(string $file, string $base): ?string
     {
@@ -97,7 +112,8 @@ final class Fingerprint
 
         $relative = substr($file, strlen($base));
 
-        if ($relative === '' || str_starts_with($relative, 'vendor/') || str_contains($relative, '/vendor/')) {
+        if ($relative === '' || str_starts_with($relative, 'vendor/') || str_contains($relative, '/vendor/')
+            || in_array($relative, self::ENTRY_SCRIPTS, true)) {
             return null;
         }
 

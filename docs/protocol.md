@@ -188,7 +188,7 @@ One object per machine whose counts are in this report.
 {"fingerprint": "9f2c...64 hex", "class": "Illuminate\\Database\\QueryException", "location": "app/Services/Billing.php:88", "count": 4}
 ```
 
-`fingerprint` is `sha256(class . '|' . location)`, hex, the same value `sat/diagnostics` computes for the same exception, so the two can be matched. `location` is the first frame inside the app (not `vendor/`), relative to the app root; `"unknown"` when there is none. No message, trace, request, user or input.
+`fingerprint` is `sha256(class . '|' . location)`, hex, the same value `sat/diagnostics` computes for the same exception, so the two can be matched. `location` is the first frame inside the app, relative to the app root; `"unknown"` when there is none. Frames under `vendor/` and the entry scripts (`artisan`, `public/index.php`, `server.php`) are not inside the app: every process starts at one, so a failing queued closure would otherwise group at `artisan:16` with every other. `sat/diagnostics` counts the entry scripts as in-app, so for an exception whose only in-app frame is one of them the two fingerprints differ. No message, trace, request, user or input.
 
 ## Versions
 
