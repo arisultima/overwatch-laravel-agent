@@ -23,7 +23,8 @@
     "require-dev": {
         "orchestra/testbench": "^9.0|^10.0|^11.0",
         "pestphp/pest": "^3.0|^4.0",
-        "pestphp/pest-plugin-laravel": "^3.0|^4.0"
+        "pestphp/pest-plugin-laravel": "^3.0|^4.0",
+        "spatie/laravel-permission": "^6.15|^7.0|^8.0"
     },
     "suggest": {
         "laravel/horizon": "Adds a horizon health check and supervisor status to each report.",
