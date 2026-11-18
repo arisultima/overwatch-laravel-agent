@@ -118,7 +118,10 @@ final class HealthProbes
     /**
      * Migrations not yet run, from the app's directory and every path a
      * package registered (what `migrate` runs). Kept 10 minutes in the
-     * overwatch store; a store that fails costs a fresh scan, not the check.
+     * overwatch store, as an array: a Redis store keeps a bare number raw
+     * and returns it as a string. A store that fails costs a fresh scan, not
+     * the check. The database is asked first, so a database that is down
+     * fails the check before any directory is read.
      *
      * @return array{pending: int}
      */
@@ -127,8 +130,8 @@ final class HealthProbes
         try {
             $cached = Store::cache()->get(self::MIGRATIONS_KEY);
 
-            if (is_int($cached)) {
-                return ['pending' => $cached];
+            if (is_array($cached) && is_int($cached['pending'] ?? null)) {
+                return ['pending' => $cached['pending']];
             }
         } catch (Throwable) {
             // The cache probe reports a broken store.
@@ -137,12 +140,12 @@ final class HealthProbes
         /** @var Migrator $migrator */
         $migrator = app('migrator');
 
-        $files = $migrator->getMigrationFiles([database_path('migrations'), ...$migrator->paths()]);
         $ran = $migrator->repositoryExists() ? $migrator->getRepository()->getRan() : [];
+        $files = $migrator->getMigrationFiles([database_path('migrations'), ...$migrator->paths()]);
         $pending = count(array_diff(array_keys($files), $ran));
 
         try {
-            Store::cache()->put(self::MIGRATIONS_KEY, $pending, self::MIGRATIONS_SECONDS);
+            Store::cache()->put(self::MIGRATIONS_KEY, ['pending' => $pending], self::MIGRATIONS_SECONDS);
         } catch (Throwable) {
             // Same: probed again next time.
         }

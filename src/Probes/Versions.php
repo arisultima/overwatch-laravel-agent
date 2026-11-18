@@ -17,6 +17,12 @@ final class Versions
 {
     public const KEY = 'overwatch:versions';
 
+    /**
+     * The last composer.lock hash, with the path, time and size it was
+     * taken from, so the file is read only when one of them changed.
+     */
+    public const LOCK_KEY = 'overwatch:lock-hash';
+
     public const EVERY_SECONDS = 6 * 3600;
 
     public const MAX_PACKAGES = 1500;
@@ -69,19 +75,51 @@ final class Versions
     }
 
     /**
-     * The sha256 of the app's composer.lock. An app deployed without one is
-     * identified by the installed list itself, so a change still shows.
+     * The sha256 of the app's composer.lock. The file is read only when its
+     * path, modification time or size differ from the last hash taken; a
+     * rewrite within the same second at the same size goes unseen until the
+     * 6 hour resend. An app deployed without a lock file is identified by
+     * the installed list itself, so a change still shows.
      */
     public static function lockHash(): string
     {
         $path = app()->basePath('composer.lock');
-        $hash = is_file($path) ? @hash_file('sha256', $path) : false;
 
-        if (is_string($hash)) {
-            return $hash;
+        clearstatcache(true, $path);
+
+        $mtime = @filemtime($path);
+        $size = @filesize($path);
+
+        if ($mtime === false || $size === false) {
+            return self::installedHash();
         }
 
-        return hash('sha256', (string) json_encode(self::fromRawData(self::rawData(), '')['packages']));
+        $file = ['path' => $path, 'mtime' => $mtime, 'size' => $size];
+
+        try {
+            $known = Store::cache()->get(self::LOCK_KEY);
+        } catch (Throwable) {
+            $known = null;
+        }
+
+        if (is_array($known) && is_string($known['hash'] ?? null)
+            && ($known['path'] ?? null) === $path && ($known['mtime'] ?? null) === $mtime && ($known['size'] ?? null) === $size) {
+            return $known['hash'];
+        }
+
+        $hash = @hash_file('sha256', $path);
+
+        if (! is_string($hash)) {
+            return self::installedHash();
+        }
+
+        try {
+            Store::cache()->forever(self::LOCK_KEY, [...$file, 'hash' => $hash]);
+        } catch (Throwable) {
+            // Read again next time.
+        }
+
+        return $hash;
     }
 
     /**
@@ -124,6 +162,14 @@ final class Versions
             'packages' => array_slice($packages, 0, self::MAX_PACKAGES),
             'packages_truncated' => max(0, count($packages) - self::MAX_PACKAGES),
         ];
+    }
+
+    /**
+     * The hash of the installed list, for an app without a readable lock.
+     */
+    private static function installedHash(): string
+    {
+        return hash('sha256', (string) json_encode(self::fromRawData(self::rawData(), '')['packages']));
     }
 
     /**

@@ -88,6 +88,34 @@ it('caches the pending migrations count for ten minutes', function () {
     expect(HealthProbes::checks()['migrations']['ok'])->toBeFalse();
 });
 
+it('caches the pending migrations count on the Redis store', function () {
+    $this->useDriver('redis');
+    useSqliteMemory();
+    $this->freezeTime();
+
+    $first = HealthProbes::checks()['migrations'];
+    expect($first['ok'])->toBeTrue();
+
+    config(['database.connections.probe.database' => '/nonexistent/x.sqlite']);
+    DB::purge('probe');
+
+    expect(HealthProbes::checks()['migrations'])->toBe($first);
+});
+
+it('does not scan the migration directories while the database is down', function () {
+    config([
+        'database.connections.broken' => ['driver' => 'sqlite', 'database' => '/nonexistent/x.sqlite', 'prefix' => ''],
+        'database.default' => 'broken',
+    ]);
+    DB::purge('broken');
+
+    $migrator = Mockery::mock(app('migrator'))->makePartial();
+    $migrator->shouldNotReceive('getMigrationFiles');
+    $this->app->instance('migrator', $migrator);
+
+    expect(HealthProbes::checks()['migrations']['ok'])->toBeFalse();
+});
+
 it('reports a cache that does not return what it was given', function () {
     config(['cache.stores.void' => ['driver' => 'null'], 'cache.default' => 'void']);
 

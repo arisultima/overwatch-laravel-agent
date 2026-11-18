@@ -6,23 +6,29 @@ use Arisultima\OverwatchAgent\Probes\Versions;
 use Illuminate\Support\Str;
 
 /**
- * A base path holding a composer.lock with this content.
+ * A base path holding a composer.lock with this content. The directory is
+ * removed after the test; only directories this test made are touched.
  */
 function lockFixture(string $content): string
 {
-    $dir = sys_get_temp_dir().'/overwatch-versions-'.Str::random(10);
-    mkdir($dir);
+    $dir = tempLockDir();
     file_put_contents($dir.'/composer.lock', $content);
 
     return $dir;
 }
 
-afterEach(function () {
-    foreach (glob(sys_get_temp_dir().'/overwatch-versions-*/composer.lock') ?: [] as $file) {
-        unlink($file);
-        rmdir(dirname($file));
-    }
-});
+function tempLockDir(): string
+{
+    $dir = sys_get_temp_dir().'/overwatch-versions-'.Str::random(10);
+    mkdir($dir);
+
+    test()->beforeApplicationDestroyed(function () use ($dir) {
+        @unlink($dir.'/composer.lock');
+        @rmdir($dir);
+    });
+
+    return $dir;
+}
 
 it('sends versions only when due', function () {
     $this->freezeTime();
@@ -41,10 +47,7 @@ it('sends versions only when due', function () {
 });
 
 it('identifies an app without a composer.lock by its installed list', function () {
-    $dir = sys_get_temp_dir().'/overwatch-versions-'.Str::random(10);
-    mkdir($dir);
-    $this->beforeApplicationDestroyed(fn () => rmdir($dir));
-    $this->app->setBasePath($dir);
+    $this->app->setBasePath(tempLockDir());
 
     $hash = Versions::section()['lock_hash'];
 
@@ -112,4 +115,21 @@ it('caps the package list at 1500', function () {
         ->and($section['packages_truncated'])->toBe(100)
         ->and($section['packages'][0])->toBe(['vendor/p0001', '1.0.0', false])
         ->and($section['packages'][1499][0])->toBe('vendor/p1500');
+});
+
+it('reads composer.lock only when its time or size changed', function () {
+    $this->app->setBasePath(lockFixture('{"packages": []}'));
+
+    $real = Versions::lockHash();
+    expect($real)->toBe(hash('sha256', '{"packages": []}'));
+
+    // A remembered hash for the same file, time and size is used as is.
+    $entry = cache()->store()->get(Versions::LOCK_KEY);
+    cache()->store()->forever(Versions::LOCK_KEY, [...$entry, 'hash' => str_repeat('a', 64)]);
+
+    expect(Versions::lockHash())->toBe(str_repeat('a', 64));
+
+    file_put_contents(base_path('composer.lock'), '{"packages": [{"name": "a/b"}]}');
+
+    expect(Versions::lockHash())->toBe(hash('sha256', '{"packages": [{"name": "a/b"}]}'));
 });
