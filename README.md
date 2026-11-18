@@ -158,8 +158,9 @@ sharing one name, for example a value baked into an image, are merged into one
 instance and their counts mixed. Names are lowercased, because Overwatch
 compares them without case: `Web-1` and `web-1` are the same instance.
 
-- With a shared cache store (the same Redis for every machine), one server at a
-  time runs the scheduled report and sends every machine's minutes in it.
+- With a shared cache store (the same Redis for every machine), every machine's
+  scheduler starts the report each minute, but only the one that takes the
+  report lock sends it, with every machine's minutes in it.
 - Without a shared store, every machine that runs the scheduler reports for
   itself. A machine that runs no scheduler sends nothing.
 
@@ -185,6 +186,11 @@ counts twice.
 
 ## Known limits
 
+- **A down default cache stops the scheduler itself:** Laravel's `schedule:run`
+  reads its own flags from the app's default cache store before any task runs,
+  so while that store is down no scheduled task runs, this report included,
+  even when `OVERWATCH_CACHE_STORE` points elsewhere. Overwatch then sees the
+  app go quiet, which is the alert you want.
 - **Octane and other long-running servers:** request durations are measured
   from `LARAVEL_START` when it is defined, else from the package's middleware.
   In a worker that serves many requests neither may mark the true start of each

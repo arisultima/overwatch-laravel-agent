@@ -51,7 +51,7 @@ Every text field is a non-empty string once surrounding whitespace is trimmed, a
 
 The package reads nothing else from a response. Kept minutes expire after 60 minutes; those lost are counted into the next report's `dropped_minutes`.
 
-The package may send a minute the server already accepted: when a 202 is lost on the way back, when marking the minutes sent fails, when the report lock cannot be taken (that run marks nothing), and on every `overwatch:test`. So the server stores minutes per (instance, minute) as replace-or-ignore, never add: a minute it already holds is replaced by the resent one or the resent one is ignored, and its counts are never added a second time.
+The package may send a minute the server already accepted: when a 202 is lost on the way back, when marking the minutes sent fails, when taking the report lock fails (that run sends but marks nothing), and on every `overwatch:test`. So the server stores minutes per (instance, minute) as replace-or-ignore, never add: a minute it already holds is replaced by the resent one or the resent one is ignored, and its counts are never added a second time.
 
 `dropped_minutes` may likewise repeat: it is cleared only once a report carrying it is accepted, so every report until then carries the same count again (plus any new losses). It counts instance-minutes, not wall minutes: one minute lost on three instances is 3.
 
