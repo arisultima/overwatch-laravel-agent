@@ -278,17 +278,18 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
     }
 
     /**
-     * One report a minute. withoutOverlapping keeps a hung send from stacking
-     * runs; onOneServer lets one node report for every machine that shares
-     * the cache.
+     * One report a minute, on every node that runs the scheduler. Neither
+     * onOneServer nor withoutOverlapping: both take a mutex on the app's
+     * default cache store, and schedule:run takes the onOneServer one
+     * outside any try, so a default store that is down would stop the app's
+     * whole schedule. The command's own non-blocking lock on the overwatch
+     * store already lets one node report for every machine that shares it,
+     * and keeps a hung send from overlapping the next.
      */
     private function registerSchedule(): void
     {
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-            $schedule->command('overwatch:report')
-                ->everyMinute()
-                ->withoutOverlapping(5)
-                ->onOneServer();
+            $schedule->command('overwatch:report')->everyMinute();
         });
     }
 }

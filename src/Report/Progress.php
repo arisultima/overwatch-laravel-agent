@@ -15,9 +15,9 @@ use Throwable;
  * report cannot work out itself. Both live in the overwatch store without
  * expiry, so every node that may report sees the same progress.
  *
- * Only the reporting node writes them, one run at a time (the schedule runs
- * the report withoutOverlapping and on one server), so a plain read and
- * write is enough.
+ * Only the reporting node writes them, one run at a time (the report runs
+ * under its non-blocking lock in the overwatch store, and a run that cannot
+ * take that lock marks nothing), so a plain read and write is enough.
  */
 final class Progress
 {

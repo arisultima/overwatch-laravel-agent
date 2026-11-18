@@ -44,9 +44,10 @@ use Throwable;
 final class ReportCommand extends Command
 {
     /**
-     * How long one run holds the report lock: the same 5 minutes as the
-     * schedule's withoutOverlapping, so a slow run never lets another node
-     * send the same minutes. A run releases it as soon as it is done.
+     * How long one run holds the report lock: 5 minutes, far longer than a
+     * run takes (one send times out after 5 s), so a slow run never lets
+     * another node send the same minutes. A run releases it as soon as it
+     * is done.
      */
     public const LOCK_SECONDS = 300;
 
@@ -77,16 +78,18 @@ final class ReportCommand extends Command
     /**
      * Run under the report lock in the overwatch store, without waiting.
      *
-     * The schedule's withoutOverlapping and onOneServer lock on the app's
-     * default cache, which may be per machine while the overwatch store is
-     * shared; this lock is the one every reporter of the store sees. When
-     * another run holds it, this one does nothing.
+     * This is the only lock: the schedule entry takes none (no
+     * withoutOverlapping, no onOneServer), since those lock on the app's
+     * default cache, which may be per machine, and a default store that is
+     * down would stop the app's whole schedule. This one is the lock every
+     * reporter of the overwatch store sees. When another run holds it, this
+     * one does nothing.
      *
      * When taking the lock throws, the run still builds and sends, so the
      * checks tell Overwatch the store is in trouble, but marks nothing: an
      * unlocked run could overlap a locked one, send its minutes again or
-     * move progress back. A store without locks runs unlocked and marks,
-     * guarded by the schedule's own lock.
+     * move progress back. A store without locks (every store Laravel ships
+     * has them; only a custom one may not) runs unlocked and marks.
      *
      * @param  Closure(bool): void  $run  given whether it may mark
      */
