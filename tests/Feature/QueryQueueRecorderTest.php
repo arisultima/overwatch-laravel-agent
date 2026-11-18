@@ -168,7 +168,10 @@ it('counts processed and failed jobs per queue', function (): void {
         ->and($counted['queue.mail.processed'])->toBe(1)
         ->and($counted['queue.mail.failed'])->toBe(1)
         ->and($counted)->toHaveKey('queue.mail.slowest_ms')
-        ->and(arrayStoreHolds('4111'))->toBeFalse();
+        // The whole number with its spaces: a bare '4111' also turns up in
+        // the store's expiry timestamps at some seconds (1795034111).
+        ->and(arrayStoreHolds('4111 1111 1111 1111'))->toBeFalse()
+        ->and(arrayStoreHolds('declined'))->toBeFalse();
 });
 
 it('counts a job that fails itself once, as failed', function (): void {
