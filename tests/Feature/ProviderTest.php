@@ -42,7 +42,8 @@ it('registers nothing without a token', function (): void {
 it('registers nothing when disabled, even with a token', function (): void {
     $this->bootWith(['enabled' => false]);
 
-    expect(app(HttpKernel::class)->hasMiddleware(RecordRequest::class))->toBeFalse()
+    expect(Event::hasListeners(Failed::class))->toBeFalse()
+        ->and(app(HttpKernel::class)->hasMiddleware(RecordRequest::class))->toBeFalse()
         ->and(overwatchSchedule())->toBe([]);
 });
 
