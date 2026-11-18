@@ -27,10 +27,11 @@ use Throwable;
  * this one) contributes the closed minutes after the last one sent for it,
  * at most the newest 60. A minute counts as closed only once it has been
  * over for CLOSE_GRACE_SECONDS, so an increment that lands just after the
- * turn of the minute is not lost. Minutes with nothing counted are left out
- * of `minutes` but still covered by the report, so an idle instance moves on
- * too. An instance whose progress or counters cannot be read is listed with
- * nothing and left out of `sent`, so its minutes wait for the next report.
+ * turn of the minute is not lost. Minutes with nothing counted and no set
+ * member are left out of `minutes` but still covered by the report, so an
+ * idle instance moves on too. An instance whose progress, counters or sets
+ * cannot be read is listed with nothing and left out of `sent`, so its
+ * minutes wait for the next report.
  *
  * Nothing is marked here: the caller marks `sent` once the server has taken
  * the report. Building twice gives the same minutes.
@@ -169,12 +170,13 @@ final class ReportBuilder
 
         foreach ($range as $minute) {
             $counts = $read[$minute] ?? [];
+            $distinct = $this->distinct($instance, $minute);
 
-            if ($counts === []) {
+            if ($counts === [] && array_sum($distinct) === 0) {
                 continue;
             }
 
-            $minutes[] = $this->minute($instance, $minute, $counts);
+            $minutes[] = self::minute($minute, $counts, $distinct);
 
             foreach ($counts as $key => $n) {
                 if (str_starts_with($key, 'error.')) {
@@ -197,14 +199,13 @@ final class ReportBuilder
     }
 
     /**
-     * One minute in the schema shape. The distinct sets are read only when
-     * the counter that goes with them moved: a set is only ever added to
-     * right after its counter.
+     * One minute in the schema shape.
      *
      * @param  array<string, int>  $counts
+     * @param  array<string, int>  $distinct
      * @return array<string, mixed>
      */
-    private function minute(string $instance, string $minute, array $counts): array
+    private static function minute(string $minute, array $counts, array $distinct): array
     {
         $counters = [];
 
@@ -218,33 +219,35 @@ final class ReportBuilder
             $histogram[$band] = $counts['histogram.'.$band] ?? 0;
         }
 
-        $distinct = [
-            'auth.login_failed_accounts' => 0,
-            'auth.login_failed_sources' => 0,
-            'auth.login_failed_max_per_source' => 0,
-            'auth.login_failed_max_per_account' => 0,
-            'auth.login_accounts' => 0,
-        ];
-
-        if ($counters['auth.login_failed'] > 0) {
-            $accounts = $this->sets()->sizes($instance, $minute, 'auth.login_failed_accounts');
-            $sources = $this->sets()->sizes($instance, $minute, 'auth.login_failed_sources');
-
-            $distinct['auth.login_failed_accounts'] = $accounts['distinct'];
-            $distinct['auth.login_failed_sources'] = $sources['distinct'];
-            $distinct['auth.login_failed_max_per_source'] = $sources['max'];
-            $distinct['auth.login_failed_max_per_account'] = $accounts['max'];
-        }
-
-        if ($counters['auth.login'] > 0) {
-            $distinct['auth.login_accounts'] = $this->sets()->sizes($instance, $minute, 'auth.login_accounts')['distinct'];
-        }
-
         return [
             'at' => self::at($minute),
             'counters' => $counters,
             'histogram' => $histogram,
             'distinct' => $distinct,
+        ];
+    }
+
+    /**
+     * The minute's `distinct` block. Every set is read for every minute in
+     * range, whatever its counters say: the recorder takes the minute anew
+     * for each call, so a counter can land just before the turn of a minute
+     * and its set member just after, in a minute with no counter at all.
+     * That is three set reads per instance-minute, nearly always one minute.
+     *
+     * @return array<string, int>
+     */
+    private function distinct(string $instance, string $minute): array
+    {
+        $accounts = $this->sets()->sizes($instance, $minute, 'auth.login_failed_accounts');
+        $sources = $this->sets()->sizes($instance, $minute, 'auth.login_failed_sources');
+        $logins = $this->sets()->sizes($instance, $minute, 'auth.login_accounts');
+
+        return [
+            'auth.login_failed_accounts' => $accounts['distinct'],
+            'auth.login_failed_sources' => $sources['distinct'],
+            'auth.login_failed_max_per_source' => $sources['max'],
+            'auth.login_failed_max_per_account' => $accounts['max'],
+            'auth.login_accounts' => $logins['distinct'],
         ];
     }
 

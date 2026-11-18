@@ -453,3 +453,82 @@ it('takes an instance named only with digits', function () {
         ->and(minutesOf(instanceIn($built['report'], '1001')))->toBe(['2026-11-18T13:05:00Z'])
         ->and($built['sent'])->toHaveKey('1001');
 });
+
+it('marks an all-digit instance sent and does not resend it', function () {
+    at('13:05:20');
+    as_instance('1001');
+    app(Recorder::class)->count('http.requests');
+    InstanceStamp::maybe();
+
+    $built = buildAt('13:06:30');
+
+    // PHP turns the name into an int key; marking must still work.
+    expect(array_keys($built['sent']))->toBe([1001]);
+
+    foreach ($built['sent'] as $instance => $minute) {
+        Progress::markSent($instance, $minute);
+    }
+
+    expect(Progress::lastSent(1001))->toBe('202611181305')
+        ->and(Progress::lastSent('1001'))->toBe('202611181305');
+
+    at('13:06:40');
+    app(Recorder::class)->count('http.requests');
+
+    $built = buildAt('13:07:30');
+
+    expect(minutesOf(instanceIn($built['report'], '1001')))->toBe(['2026-11-18T13:06:00Z']);
+});
+
+it('reports a set member that landed in the next minute', function () {
+    as_instance('web-1');
+    $recorder = app(Recorder::class);
+
+    // The counter lands just before the turn of the minute, its set member
+    // just after: 13:06 holds the member and no counter at all.
+    at('13:05:59');
+    $recorder->count('auth.login_failed');
+    at('13:06:00');
+    $recorder->distinct('auth.login_failed_sources', '203.0.113.9');
+
+    // 13:07 has a counter, but not the one that goes with its set.
+    at('13:07:30');
+    $recorder->count('http.requests');
+    $recorder->distinct('auth.login_accounts', 'App\Models\User|7');
+
+    $instance = instanceIn(buildAt('13:08:30')['report'], 'web-1');
+
+    expect(minutesOf($instance))->toBe(['2026-11-18T13:05:00Z', '2026-11-18T13:06:00Z', '2026-11-18T13:07:00Z'])
+        ->and($instance['minutes'][0]['distinct']['auth.login_failed_sources'])->toBe(0)
+        ->and($instance['minutes'][1]['counters'])->toBe(array_fill_keys(ReportBuilder::COUNTERS, 0))
+        ->and($instance['minutes'][1]['distinct']['auth.login_failed_sources'])->toBe(1)
+        ->and($instance['minutes'][1]['distinct']['auth.login_failed_max_per_source'])->toBe(1)
+        ->and($instance['minutes'][2]['counters']['auth.login'])->toBe(0)
+        ->and($instance['minutes'][2]['distinct']['auth.login_accounts'])->toBe(1);
+});
+
+it('adds expired and trimmed minutes together in dropped_minutes', function () {
+    $names = ['web-1', 'web-2', 'web-3'];
+    $buckets = app(\Arisultima\OverwatchAgent\Recording\Buckets::class);
+
+    at('13:30:00');
+
+    foreach ($names as $name) {
+        as_instance($name);
+        InstanceStamp::maybe();
+        Progress::markSent($name, '202611181200');
+
+        // Every one of the 60 readable minutes, 12:30 to 13:29, has counts.
+        foreach (range(0, 59) as $m) {
+            $buckets->increment($name, Carbon::parse('2026-11-18 12:30', 'UTC')->addMinutes($m)->format('YmdHi'), 'http.requests');
+        }
+    }
+
+    $report = buildAt('13:30:15')['report'];
+    $trimmed = array_sum(array_column($report['instances'], 'minutes_truncated'));
+
+    // 12:01 to 12:29 expired for each of the three.
+    expect($trimmed)->toBeGreaterThan(0)
+        ->and($report['dropped_minutes'])->toBe(3 * 29 + $trimmed)
+        ->and(strlen(Trimmer::encode([...$report, 'versions' => null])))->toBeLessThanOrEqual(Trimmer::REPORT_BYTES);
+});

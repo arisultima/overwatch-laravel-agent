@@ -15,8 +15,9 @@ namespace Arisultima\OverwatchAgent\Report;
  * into `dropped_minutes`. Should the report still not fit with every minute
  * gone (50 instances with 20 long error groups each can be larger than 64
  * KB), the smallest error groups go next, so the checks still arrive rather
- * than the whole report being refused. The `versions` section has its own
- * cap and loses packages from the end of its sorted list.
+ * than the whole report being refused; after them, each instance's queues
+ * down to 5. The `versions` section has its own cap and loses packages from
+ * the end of its sorted list.
  *
  * Lists are expected in the order the builder makes them: minutes oldest
  * first, error groups largest first.
@@ -46,6 +47,11 @@ final class Trimmer
 
     public const MAX_MINUTES = 60;
 
+    /**
+     * Queues each instance keeps when the report fits no other way.
+     */
+    public const LAST_RESORT_QUEUES = 5;
+
     private const JSON_FLAGS = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR;
 
     /**
@@ -69,6 +75,7 @@ final class Trimmer
         $report = self::capInstanceLists($report);
         $report = self::fitMinutes($report);
         $report = self::fitErrors($report);
+        $report = self::fitQueues($report);
 
         return self::fitVersions($report);
     }
@@ -250,6 +257,52 @@ final class Trimmer
             }
 
             $size = self::reportBytes($report);
+        }
+
+        return $report;
+    }
+
+    /**
+     * The very last step: when even without minutes and error groups the
+     * report is too large (50 instances with 20 queues each), every instance
+     * keeps its 5 queues with the most jobs waiting, by the queue depths
+     * measured on the reporting node, then the most jobs run. The schema has
+     * no count for cut queues, as for instances past 50.
+     *
+     * @param  array<string, mixed>  $report
+     * @return array<string, mixed>
+     */
+    private static function fitQueues(array $report): array
+    {
+        if (self::reportBytes($report) <= self::REPORT_BYTES) {
+            return $report;
+        }
+
+        $pending = [];
+
+        foreach (is_array($report['queue_depths'] ?? null) ? $report['queue_depths'] : [] as $row) {
+            if (is_array($row) && is_string($row['name'] ?? null)) {
+                $pending[$row['name']] = max($pending[$row['name']] ?? 0, self::int($row['pending'] ?? 0));
+            }
+        }
+
+        $rank = static fn (array $queue): array => [
+            $pending[(string) ($queue['name'] ?? '')] ?? -1,
+            self::int($queue['processed'] ?? 0) + self::int($queue['failed'] ?? 0),
+        ];
+
+        foreach (self::instanceKeys($report) as $i) {
+            $queues = $report['instances'][$i]['queues'] ?? [];
+
+            if (! is_array($queues) || count($queues) <= self::LAST_RESORT_QUEUES) {
+                continue;
+            }
+
+            $queues = array_values(array_filter($queues, 'is_array'));
+
+            usort($queues, static fn (array $a, array $b): int => [...$rank($b), (string) ($a['name'] ?? '')] <=> [...$rank($a), (string) ($b['name'] ?? '')]);
+
+            $report['instances'][$i]['queues'] = array_slice($queues, 0, self::LAST_RESORT_QUEUES);
         }
 
         return $report;

@@ -197,3 +197,46 @@ it('caps the versions section on its own', function () {
         // The versions section does not count against the report cap.
         ->and($fit['instances'][0]['minutes'])->toHaveCount(1);
 });
+
+it('cuts each instance to the 5 queues with the most pending as the last step', function () {
+    $report = fixtureReport(50, 1, 20, 3);
+
+    foreach ($report['instances'] as $i => $instance) {
+        $report['instances'][$i]['queues'] = array_map(
+            fn (int $q) => ['name' => sprintf('queue-%02d-long-enough-name', $q), 'processed' => 100000 + $q, 'failed' => 1000 + $q, 'slowest_ms' => 99999],
+            range(1, 20),
+        );
+    }
+
+    // queue-03 waits most, then queue-01, queue-02; the rest have no depth
+    // row and rank by jobs: queue-20, queue-19.
+    $report['queue_depths'] = [
+        ['connection' => 'redis', 'name' => 'queue-01-long-enough-name', 'pending' => 50, 'oldest_pending_seconds' => 1],
+        ['connection' => 'redis', 'name' => 'queue-02-long-enough-name', 'pending' => 7, 'oldest_pending_seconds' => 1],
+        ['connection' => 'redis', 'name' => 'queue-03-long-enough-name', 'pending' => 900, 'oldest_pending_seconds' => 1],
+    ];
+
+    $fit = Trimmer::fit($report);
+
+    expect(strlen(Trimmer::encode($fit)))->toBeLessThanOrEqual(Trimmer::REPORT_BYTES);
+
+    foreach ($fit['instances'] as $instance) {
+        expect(array_column($instance['queues'], 'name'))->toBe([
+            'queue-03-long-enough-name',
+            'queue-01-long-enough-name',
+            'queue-02-long-enough-name',
+            'queue-20-long-enough-name',
+            'queue-19-long-enough-name',
+        ]);
+    }
+});
+
+it('keeps every queue while the report fits', function () {
+    $report = fixtureReport(1, 1);
+    $report['instances'][0]['queues'] = array_map(
+        fn (int $q) => ['name' => 'q'.$q, 'processed' => $q, 'failed' => 0, 'slowest_ms' => 1],
+        range(1, 20),
+    );
+
+    expect(Trimmer::fit($report)['instances'][0]['queues'])->toHaveCount(20);
+});

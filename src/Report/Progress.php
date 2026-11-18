@@ -25,10 +25,13 @@ final class Progress
      * The last minute (YmdHi) sent for this instance, or null when none was.
      * Throws when the store cannot be read: guessing "never sent" would send
      * up to 60 minutes a second time.
+     *
+     * The instance may be an int: a name made only of digits comes back as
+     * an int array key, as in the builder's `sent`.
      */
-    public static function lastSent(string $instance): ?string
+    public static function lastSent(int|string $instance): ?string
     {
-        $minute = Store::cache()->get(Keys::progress($instance));
+        $minute = Store::cache()->get(Keys::progress((string) $instance));
 
         // A Redis store keeps a numeric string raw and may hand back an int.
         if (is_int($minute)) {
@@ -39,16 +42,17 @@ final class Progress
     }
 
     /**
-     * Never throws; a minute that could not be marked is sent again.
+     * Never throws; a minute that could not be marked is sent again. The
+     * instance may be an int key from `sent`, as in lastSent().
      */
-    public static function markSent(string $instance, string $minute): void
+    public static function markSent(int|string $instance, string $minute): void
     {
         if (Minute::parse($minute) === null) {
             return;
         }
 
         try {
-            Store::cache()->forever(Keys::progress($instance), $minute);
+            Store::cache()->forever(Keys::progress((string) $instance), $minute);
         } catch (Throwable) {
             // The next report covers the minute again.
         }
