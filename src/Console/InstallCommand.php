@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Console;
 
 use Arisultima\OverwatchAgent\Config;
+use Arisultima\OverwatchAgent\Support\Store;
 use Illuminate\Console\Command;
 
 /**
  * Publishes the config (never over one the app already has), prints the
- * .env lines to add and says what is still missing. It never writes .env:
- * the token is a secret the app owner puts there.
+ * .env lines to add, says what is still missing and warns when the
+ * overwatch store cannot keep counts. It never writes .env: the token is a
+ * secret the app owner puts there.
  *
  * Exits 1 while something stops reports going out, so a setup script can
  * tell an app that is ready from one that is not.
@@ -35,6 +37,13 @@ final class InstallCommand extends Command
         $this->newLine();
         $this->line('Reports go once a minute from the Laravel scheduler, so it must run: a cron entry');
         $this->line('for "php artisan schedule:run" every minute, or "php artisan schedule:work".');
+
+        $store = Store::warning();
+
+        if ($store !== null) {
+            $this->newLine();
+            $this->components->warn($store);
+        }
 
         if ($this->laravel->configurationIsCached()) {
             $this->newLine();

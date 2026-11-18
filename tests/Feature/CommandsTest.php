@@ -12,7 +12,9 @@ use Arisultima\OverwatchAgent\Support\Store;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 /**
  * Run an overwatch command; returns the exit code and what it printed.
@@ -246,3 +248,41 @@ it('never prints the token', function (string $command): void {
 
     expect($output)->not->toContain('satapp_secret_value');
 })->with(['overwatch:install', 'overwatch:test']);
+
+it('warns when the overwatch store keeps counts in no shared place', function (string $command, array $options, string $driver, string $meaning): void {
+    config([
+        'cache.stores.none' => ['driver' => 'null'],
+        'overwatch.cache_store' => $driver === 'null' ? 'none' : 'array',
+    ]);
+    Http::fake();
+
+    [, $output] = runOverwatch($command, $options);
+
+    expect($output)->toContain('uses the '.$driver.' driver')
+        ->and($output)->toContain($meaning)
+        ->and($output)->toContain('OVERWATCH_CACHE_STORE');
+})->with([
+    'install, array' => ['overwatch:install', [], 'array', 'never shared'],
+    'test, array' => ['overwatch:test', ['--dry-run' => true], 'array', 'never shared'],
+    'install, null' => ['overwatch:install', [], 'null', 'keeps nothing'],
+    'test, null' => ['overwatch:test', ['--dry-run' => true], 'null', 'keeps nothing'],
+]);
+
+it('says nothing about a store that keeps counts', function (string $command, array $options): void {
+    $path = sys_get_temp_dir().'/overwatch-store-'.Str::random(10);
+    $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($path));
+
+    config([
+        'cache.stores.shared' => ['driver' => 'file', 'path' => $path],
+        'overwatch.cache_store' => 'shared',
+    ]);
+    Http::fake();
+
+    [, $output] = runOverwatch($command, $options);
+
+    expect($output)->not->toContain('overwatch cache store')
+        ->and($output)->not->toContain('OVERWATCH_CACHE_STORE');
+})->with([
+    'install' => ['overwatch:install', []],
+    'test' => ['overwatch:test', ['--dry-run' => true]],
+]);

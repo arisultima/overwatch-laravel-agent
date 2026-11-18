@@ -10,6 +10,7 @@ use Arisultima\OverwatchAgent\Report\ReportBuilder;
 use Arisultima\OverwatchAgent\Report\Sender;
 use Arisultima\OverwatchAgent\Report\SendResult;
 use Arisultima\OverwatchAgent\Support\Fingerprint;
+use Arisultima\OverwatchAgent\Support\Store;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Throwable;
@@ -42,6 +43,12 @@ final class TestCommand extends Command
 
         foreach ($missing as $line) {
             $this->components->error($line);
+        }
+
+        $store = Store::warning();
+
+        if ($store !== null) {
+            $this->components->warn($store);
         }
 
         if ($missing !== [] && ! $dryRun) {

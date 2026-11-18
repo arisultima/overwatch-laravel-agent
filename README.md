@@ -67,7 +67,7 @@ All in `config/overwatch.php`; the defaults suit most apps.
 | `enabled` | `OVERWATCH_ENABLED`, true | Off means nothing is recorded or sent. |
 | `url`, `token` | `OVERWATCH_URL`, `OVERWATCH_TOKEN` | Where to send, and the app token. |
 | `instance` | `OVERWATCH_INSTANCE`, the hostname | The name this machine reports under, lowercased and cut to 100 characters. |
-| `cache_store` | `OVERWATCH_CACHE_STORE`, the default store | Where the per-minute counters live. |
+| `cache_store` | `OVERWATCH_CACHE_STORE`, the default store | Where the per-minute counters live. Not `array` or `null`: those keep nothing between processes, and both commands warn about them. |
 | `slow_query_ms` | 500 | A query at or over this is counted as slow. |
 | `slow_request_ms` | 1000 | A request over this is counted as slow. |
 | `privileged_roles` | `root`, `superadmin`, `admin` | A sign-in by an account holding one is counted as privileged. |
