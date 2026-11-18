@@ -8,7 +8,9 @@ It only counts. It never sends who did something, what they sent, or what an
 error said. The report goes one way: nothing in the server's answer changes what
 the app does.
 
-- PHP 8.3 or newer, Laravel 11, 12 or 13.
+- PHP 8.3 or newer, Laravel 12.71 or newer, or 13.40 or newer. These are the
+  oldest releases Composer installs without a security advisory; Laravel 11 is
+  out of security support and not supported.
 - No runtime dependency beyond Laravel itself.
 - Never throws into your app. A request usually costs a few cache writes; a
   sign-in may add one role lookup, and on a database or file cache store a

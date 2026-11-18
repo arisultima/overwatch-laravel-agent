@@ -4,6 +4,10 @@
 
 First release.
 
+- Supports PHP 8.3 or newer on Laravel 12.71 or newer, or 13.40 or newer, the
+  oldest releases Composer installs without a security advisory. Laravel 11 is
+  not supported: it is out of security support and Composer blocks every 11.x
+  release for its advisories.
 - Counts requests (by status class, slow, a duration histogram), slow queries,
   queue jobs, reported exceptions (grouped by class and first in-app frame) and
   sign-in, privilege and account signals into per-machine, per-minute buckets in

@@ -16,35 +16,27 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.3', '8.4', '8.5']
-        laravel: ['11.*', '12.*', '13.*']
+        laravel: ['12.*', '13.*']
         dependencies: ['highest']
         permission: ['with']
-        # Laravel 11 supports PHP 8.2 to 8.4, Laravel 12 PHP 8.2 to 8.5,
-        # Laravel 13 PHP 8.3 to 8.5. Add an exclude entry here if a later
-        # PHP or Laravel version drops one of these pairs.
-        exclude:
-          - php: '8.5'
-            laravel: '11.*'
+        # Laravel 12 supports PHP 8.2 to 8.5, Laravel 13 PHP 8.3 to 8.5. Add
+        # an exclude entry here if a later PHP or Laravel version drops one
+        # of these pairs.
         include:
-          - laravel: '11.*'
-            testbench: '9.*'
           - laravel: '12.*'
             testbench: '10.*'
           - laravel: '13.*'
             testbench: '11.*'
-          # The lowest versions composer.json allows, on the lowest PHP.
+          # The lowest versions composer.json allows, on the lowest PHP. The
+          # floors match composer.json: Composer blocks every older release
+          # for its security advisories, so nothing lower can be installed.
           - php: '8.3'
-            laravel: '11.*'
-            testbench: '9.*'
-            dependencies: 'lowest'
-            permission: 'with'
-          - php: '8.3'
-            laravel: '12.*'
+            laravel: '^12.71'
             testbench: '10.*'
             dependencies: 'lowest'
             permission: 'with'
           - php: '8.3'
-            laravel: '13.*'
+            laravel: '^13.40'
             testbench: '11.*'
             dependencies: 'lowest'
             permission: 'with'
