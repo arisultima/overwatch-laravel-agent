@@ -44,7 +44,7 @@ final class Fingerprint
      * classes only this fingerprint knowingly differs from sat/diagnostics,
      * which hashes the raw name.
      */
-    private static function className(Throwable $e): string
+    public static function className(Throwable $e): string
     {
         $class = $e::class;
         $at = strpos($class, self::ANONYMOUS);

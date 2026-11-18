@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent;
 
 use Arisultima\OverwatchAgent\Http\RecordRequest;
+use Arisultima\OverwatchAgent\Probes\InstanceStamp;
 use Arisultima\OverwatchAgent\Recording\AuthRecorder;
 use Arisultima\OverwatchAgent\Recording\Buckets;
 use Arisultima\OverwatchAgent\Recording\CacheBuckets;
@@ -37,6 +38,7 @@ use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobReleasedAfterException;
+use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\ServiceProvider;
 use ReflectionClass;
 
@@ -64,6 +66,7 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
         }
 
         $this->registerRecorders();
+        $this->registerStamps();
         $this->registerMiddleware();
         $this->registerSchedule();
     }
@@ -216,6 +219,23 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
         // an ability one of them grants late is not counted as denied. A
         // listener cannot change the answer.
         $events->listen(GateEvaluated::class, static fn (GateEvaluated $event) => $privilege()->gateEvaluated($event));
+    }
+
+    /**
+     * Each machine stamps its local probes about once a minute: when a
+     * request or command ends, and on every queue worker loop (a worker may
+     * serve no requests). The worker stops when a Looping listener returns
+     * false, so this one returns nothing.
+     */
+    private function registerStamps(): void
+    {
+        $this->app->terminating(static function (): void {
+            InstanceStamp::maybe();
+        });
+
+        $this->app->make('events')->listen(Looping::class, static function (): void {
+            InstanceStamp::maybe();
+        });
     }
 
     /**

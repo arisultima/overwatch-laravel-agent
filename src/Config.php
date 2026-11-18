@@ -77,6 +77,42 @@ final class Config
     }
 
     /**
+     * Queue names on the default connection to report the depth of; the
+     * connection's default queue when none are set.
+     *
+     * @return list<string>
+     */
+    public static function queues(): array
+    {
+        $queues = config('overwatch.queues', []);
+        $names = [];
+
+        foreach (is_array($queues) ? $queues : [$queues] as $name) {
+            if (is_scalar($name) && trim((string) $name) !== '') {
+                $names[] = trim((string) $name);
+            }
+        }
+
+        return $names !== [] ? array_values(array_unique($names)) : [self::defaultQueue()];
+    }
+
+    /**
+     * The app's default queue connection.
+     */
+    public static function queueConnection(): string
+    {
+        return self::string('queue.default') ?? 'sync';
+    }
+
+    /**
+     * The default queue name on the default connection.
+     */
+    public static function defaultQueue(): string
+    {
+        return self::string('queue.connections.'.self::queueConnection().'.queue') ?? 'default';
+    }
+
+    /**
      * The configured instance name; null means the hostname is used.
      */
     public static function instanceName(): ?string

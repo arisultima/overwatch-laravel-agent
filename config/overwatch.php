@@ -60,4 +60,11 @@ return [
     */
     'api_prefix' => 'api/',
 
+    /*
+    | Queue names on the default queue connection whose depth and oldest
+    | waiting job are reported, at most 20. Empty uses that connection's
+    | default queue.
+    */
+    'queues' => [],
+
 ];

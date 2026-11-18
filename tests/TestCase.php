@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Tests;
 
 use Arisultima\OverwatchAgent\OverwatchAgentServiceProvider;
+use Arisultima\OverwatchAgent\Probes\InstanceStamp;
 use Arisultima\OverwatchAgent\Recording\Guard;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -29,6 +30,7 @@ abstract class TestCase extends Orchestra
         // The guard's pause lives for the whole process, so one test that
         // trips it must not silence the next.
         Guard::reset();
+        InstanceStamp::reset();
     }
 
     protected function getPackageProviders($app): array

@@ -38,6 +38,23 @@ final class Keys
     }
 
     /**
+     * The last local probe stamp of one instance.
+     */
+    public static function stamp(string $instance): string
+    {
+        return 'overwatch:stamp:'.self::segment($instance);
+    }
+
+    /**
+     * The names of the instances that have stamped, so the reporter can find
+     * them; a cache cannot list its keys.
+     */
+    public static function instances(): string
+    {
+        return 'overwatch:instances';
+    }
+
+    /**
      * A name as a key segment. Plain names stay readable; anything with
      * spaces, colons, braces or other characters some stores refuse (or over
      * 100 characters) becomes a hash of itself.
