@@ -60,9 +60,9 @@ LUA;
         $counts = is_array($counts) ? array_map('intval', $counts) : [];
 
         return [
-            'distinct' => min($size, self::CAP),
+            'distinct' => $size,
             'max' => $counts === [] ? 0 : max($counts),
-            'capped' => $size > self::CAP || (bool) $connection->command('exists', [$key.':capped']),
+            'capped' => (bool) $connection->command('exists', [$key.':capped']),
         ];
     }
 

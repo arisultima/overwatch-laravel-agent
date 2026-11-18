@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Arisultima\OverwatchAgent\Recording;
 
-use Closure;
-use Illuminate\Contracts\Cache\LockProvider;
-use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Cache\Repository;
 
 /**
@@ -37,7 +34,7 @@ final class LockedDistinctSets implements DistinctSets
         $hash = hash_hmac('sha256', $identifier, $this->appKey);
         $key = Keys::set($instance, $minute, $set);
 
-        $this->locked(self::lockKey($instance, $minute, $set), function () use ($key, $hash): void {
+        Locks::run($this->cache, self::lockKey($instance, $minute, $set), function () use ($key, $hash): void {
             $stored = $this->stored($key);
 
             if (isset($stored['members'][$hash])) {
@@ -59,7 +56,7 @@ final class LockedDistinctSets implements DistinctSets
         $stored = $this->stored(Keys::set($instance, $minute, $set));
 
         return [
-            'distinct' => min(count($stored['members']), self::CAP),
+            'distinct' => count($stored['members']),
             'max' => $stored['members'] === [] ? 0 : (int) max($stored['members']),
             'capped' => $stored['capped'],
         ];
@@ -76,25 +73,5 @@ final class LockedDistinctSets implements DistinctSets
             'members' => is_array($stored) && is_array($stored['members'] ?? null) ? $stored['members'] : [],
             'capped' => is_array($stored) && ($stored['capped'] ?? false) === true,
         ];
-    }
-
-    /**
-     * Run under a one-second lock, waiting at most a second for it.
-     */
-    private function locked(string $name, Closure $fn): void
-    {
-        $store = $this->cache->getStore();
-
-        if (! $store instanceof LockProvider) {
-            $fn();
-
-            return;
-        }
-
-        try {
-            $store->lock($name, 1)->betweenBlockedAttemptsSleepFor(20)->block(1, $fn);
-        } catch (LockTimeoutException) {
-            // Dropped on purpose; see the class comment.
-        }
     }
 }

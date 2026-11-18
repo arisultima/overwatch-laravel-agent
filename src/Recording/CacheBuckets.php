@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Arisultima\OverwatchAgent\Recording;
 
-use Closure;
-use Illuminate\Contracts\Cache\LockProvider;
-use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Cache\Repository;
 
 /**
@@ -24,6 +21,8 @@ final class CacheBuckets implements Buckets
 
         // add() sets the TTL when it creates the key; increment() on a
         // missing key would create one that never expires on some stores.
+        // A failure between add() and index() leaves a counter the reader
+        // never sees; it expires with the TTL.
         if ($this->cache->add($valueKey, $by, self::TTL)) {
             $this->index($instance, $minute, $key);
 
@@ -49,7 +48,7 @@ final class CacheBuckets implements Buckets
         }
 
         // Once the key exists, every raise happens under its lock.
-        $this->locked($valueKey.':lock', function () use ($valueKey, $value): void {
+        Locks::run($this->cache, $valueKey.':lock', function () use ($valueKey, $value): void {
             $current = $this->cache->get($valueKey);
 
             if (is_numeric($current) && (int) $current < $value) {
@@ -143,26 +142,5 @@ final class CacheBuckets implements Buckets
         }
 
         return $valueKeys;
-    }
-
-    /**
-     * Run under a one-second lock, waiting at most a second for it. A lock
-     * still busy after that drops this one write rather than hold up the app.
-     */
-    private function locked(string $name, Closure $fn): void
-    {
-        $store = $this->cache->getStore();
-
-        if (! $store instanceof LockProvider) {
-            $fn();
-
-            return;
-        }
-
-        try {
-            $store->lock($name, 1)->betweenBlockedAttemptsSleepFor(20)->block(1, $fn);
-        } catch (LockTimeoutException) {
-            // Dropped on purpose; see above.
-        }
     }
 }
