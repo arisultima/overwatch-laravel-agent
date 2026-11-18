@@ -337,11 +337,18 @@ final class ReportBuilder
      * machine always among them (it may not have stamped yet, or the store
      * may be down). At most 50: past that, the latest to join wait.
      *
+     * Never two that the server would take for one: it compares names
+     * without case, and refuses a report that repeats one. Instance names
+     * are lowercased, so only a stamp from an older release can collide.
+     *
      * @param  list<string>  $stamped
      * @return list<string>
      */
     private static function names(array $stamped, string $reporter): array
     {
+        $shadowed = self::shadowed([$reporter, ...$stamped], $reporter);
+        $stamped = array_values(array_filter($stamped, static fn (string $name): bool => ! isset($shadowed[$name])));
+
         $others = array_slice(array_values(array_filter($stamped, static fn (string $name): bool => $name !== $reporter)), 0, self::MAX_INSTANCES - 1);
 
         if (! in_array($reporter, $stamped, true)) {
@@ -349,6 +356,39 @@ final class ReportBuilder
         }
 
         return array_values(array_filter($stamped, static fn (string $name): bool => $name === $reporter || in_array($name, $others, true)));
+    }
+
+    /**
+     * The names left out because another is the same to the server (fitted
+     * to its limit and lowercased). Of such names the reporter is kept, else
+     * the lowercase one (this release's), else the first; the others wait
+     * until their stamp expires within the hour.
+     *
+     * @param  list<string>  $names
+     * @return array<string, true>
+     */
+    private static function shadowed(array $names, string $reporter): array
+    {
+        $kept = [];
+
+        foreach ($names as $name) {
+            $key = mb_strtolower(Text::fit($name, TextLimits::INSTANCE_NAME), 'UTF-8');
+            $current = $kept[$key] ?? null;
+
+            if ($current === null || ($current !== $reporter && ($name === $reporter || ($current !== $key && $name === $key)))) {
+                $kept[$key] = $name;
+            }
+        }
+
+        $shadowed = [];
+
+        foreach ($names as $name) {
+            if (! in_array($name, $kept, true)) {
+                $shadowed[$name] = true;
+            }
+        }
+
+        return $shadowed;
     }
 
     /**

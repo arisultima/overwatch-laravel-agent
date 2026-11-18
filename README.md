@@ -66,7 +66,7 @@ All in `config/overwatch.php`; the defaults suit most apps.
 |---|---|---|
 | `enabled` | `OVERWATCH_ENABLED`, true | Off means nothing is recorded or sent. |
 | `url`, `token` | `OVERWATCH_URL`, `OVERWATCH_TOKEN` | Where to send, and the app token. |
-| `instance` | `OVERWATCH_INSTANCE`, the hostname | The name this machine reports under. |
+| `instance` | `OVERWATCH_INSTANCE`, the hostname | The name this machine reports under, lowercased and cut to 100 characters. |
 | `cache_store` | `OVERWATCH_CACHE_STORE`, the default store | Where the per-minute counters live. |
 | `slow_query_ms` | 500 | A query at or over this is counted as slow. |
 | `slow_request_ms` | 1000 | A request over this is counted as slow. |
@@ -152,7 +152,8 @@ Each machine is an instance with its own counters. The name is the hostname;
 set `OVERWATCH_INSTANCE` on each machine when hostnames are not stable
 (containers, autoscaling groups). Give every machine its own value: machines
 sharing one name, for example a value baked into an image, are merged into one
-instance and their counts mixed.
+instance and their counts mixed. Names are lowercased, because Overwatch
+compares them without case: `Web-1` and `web-1` are the same instance.
 
 - With a shared cache store (the same Redis for every machine), one server at a
   time runs the scheduled report and sends every machine's minutes in it.

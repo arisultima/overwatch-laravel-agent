@@ -14,11 +14,14 @@ final class Instance
     public const MAX_LENGTH = 100;
 
     /**
-     * OVERWATCH_INSTANCE when set, else the hostname, cut to 100 characters.
+     * OVERWATCH_INSTANCE when set, else the hostname, lowercased and cut to
+     * 100 characters. The server compares instance names without case, so
+     * machines named "Web-1" and "web-1" are one instance: lowercasing here
+     * puts their counts under one name instead of two the server refuses.
      */
     public static function name(): string
     {
-        return mb_substr(Config::instanceName() ?? self::hostname(), 0, self::MAX_LENGTH);
+        return Text::fit(mb_strtolower(Config::instanceName() ?? self::hostname(), 'UTF-8'), self::MAX_LENGTH);
     }
 
     public static function hostname(): string

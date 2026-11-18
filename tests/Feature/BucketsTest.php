@@ -125,10 +125,10 @@ it('sorts request durations into the schema bands', function (): void {
     ]);
 });
 
-it('names the instance from config or the hostname, cut to 100 characters', function (): void {
+it('names the instance from config or the hostname, lowercased and cut to 100 characters', function (): void {
     config(['overwatch.instance' => null]);
 
-    expect(Instance::name())->toBe(mb_substr((string) gethostname(), 0, 100))
+    expect(Instance::name())->toBe(mb_substr(mb_strtolower((string) gethostname()), 0, 100))
         ->and(Instance::hostname())->toBe((string) gethostname());
 
     config(['overwatch.instance' => str_repeat('a', 150)]);
