@@ -11,11 +11,22 @@ use RuntimeException;
 /**
  * A cache store that is down: every call throws, as a Redis or database
  * store does when its server cannot be reached.
+ *
+ * Except schedule:run's own flags: it reads its pause flag and clears its
+ * interrupt flag on the default store before any event runs (which, and
+ * whether that can be turned off, depends on the Laravel release), so a
+ * store down for those stops the schedule whatever the package does. Here
+ * they read as unset and clear without error, so the test sees only what
+ * the scheduled entries themselves touch.
  */
 final class DownStore implements LockProvider, Store
 {
     public function get($key)
     {
+        if (is_string($key) && str_starts_with($key, 'illuminate:schedule:')) {
+            return null;
+        }
+
         $this->down();
     }
 
@@ -56,6 +67,10 @@ final class DownStore implements LockProvider, Store
 
     public function forget($key)
     {
+        if (is_string($key) && str_starts_with($key, 'illuminate:schedule:')) {
+            return true;
+        }
+
         $this->down();
     }
 

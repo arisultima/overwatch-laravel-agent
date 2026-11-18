@@ -547,7 +547,10 @@ it('logs a swallowed failure by class only, once an hour per class', function ()
 
     Log::shouldHaveReceived('warning')->withArgs($sending)->once();
 
-    // Another class has its own hour.
+    // Another class has its own hour. Unset first: older Laravel 11
+    // releases build a class already resolved as soon as it is bound again,
+    // which would throw here in the test.
+    unset(app()[ReportBuilder::class]);
     app()->bind(ReportBuilder::class, fn () => throw new LogicException('secret at /srv/app'));
     reportAt('13:41:15');
     reportAt('13:42:15');

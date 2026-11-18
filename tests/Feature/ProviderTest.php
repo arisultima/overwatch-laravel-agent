@@ -76,52 +76,28 @@ it('registers the middleware and the schedule with a token', function (): void {
 });
 
 it('leaves the rest of the schedule running when the default cache store is down', function (): void {
-    // Laravel 12 and 13 read the pause flag from the default store at the
-    // start of every schedule:run; an app with that store down turns the
-    // polling off. Laravel 11 has no such read.
-    $pausable = property_exists(Schedule::class, 'pausable') ? Schedule::$pausable : null;
-    $interruptible = property_exists(Schedule::class, 'interruptible') ? Schedule::$interruptible : null;
+    Cache::extend('down', fn () => Cache::repository(new DownStore));
 
-    if ($pausable !== null) {
-        Schedule::$pausable = false;
-    }
+    config([
+        'cache.stores.down' => ['driver' => 'down'],
+        'cache.default' => 'down',
+        // The counters stay on a store that works.
+        'overwatch.cache_store' => 'array',
+    ]);
+    app()->forgetInstance('cache.store');
 
-    if ($interruptible !== null) {
-        Schedule::$interruptible = false;
-    }
+    $schedule = app(Schedule::class);
+    expect(overwatchSchedule())->toHaveCount(1);
 
-    try {
-        Cache::extend('down', fn () => Cache::repository(new DownStore));
+    // Registered after the overwatch entry, so it runs after it.
+    $ran = false;
+    $schedule->call(function () use (&$ran): void {
+        $ran = true;
+    })->everyMinute();
 
-        config([
-            'cache.stores.down' => ['driver' => 'down'],
-            'cache.default' => 'down',
-            // The counters stay on a store that works.
-            'overwatch.cache_store' => 'array',
-        ]);
-        app()->forgetInstance('cache.store');
+    Artisan::call('schedule:run');
 
-        $schedule = app(Schedule::class);
-        expect(overwatchSchedule())->toHaveCount(1);
-
-        // Registered after the overwatch entry, so it runs after it.
-        $ran = false;
-        $schedule->call(function () use (&$ran): void {
-            $ran = true;
-        })->everyMinute();
-
-        Artisan::call('schedule:run');
-
-        expect($ran)->toBeTrue();
-    } finally {
-        if ($pausable !== null) {
-            Schedule::$pausable = $pausable;
-        }
-
-        if ($interruptible !== null) {
-            Schedule::$interruptible = $interruptible;
-        }
-    }
+    expect($ran)->toBeTrue();
 });
 
 it('publishes the config', function (): void {
