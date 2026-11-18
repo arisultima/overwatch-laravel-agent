@@ -27,7 +27,7 @@ function useSqliteMemory(): void
     DB::purge('probe');
 }
 
-it('returns the health checks in the app_health shape', function () {
+it('returns the health checks in the documented shape', function () {
     useSqliteMemory();
 
     $checks = HealthProbes::checks();

@@ -27,7 +27,7 @@ it('posts gzip JSON with the bearer token', function () {
 
         return $request->method() === 'POST'
             && $request->url() === 'https://overwatch.test/api/agent/v1/app-report'
-            && $request->header('Authorization') === ['Bearer satapp_test']
+            && $request->header('Authorization') === ['Bearer test-token']
             && $request->header('Content-Encoding') === ['gzip']
             && $request->header('Content-Type') === ['application/json']
             && $request->header('User-Agent') === ['overwatch-laravel-agent/'.Package::version()]
@@ -42,7 +42,7 @@ it('never puts the token in the URL', function () {
 
     app(Sender::class)->send(['schema' => 1]);
 
-    Http::assertSent(fn (Request $request): bool => ! str_contains($request->url(), 'satapp_'));
+    Http::assertSent(fn (Request $request): bool => ! str_contains($request->url(), 'test-token'));
 });
 
 it('reads the status into accepted, rejected or keep', function (int $status, string $kind) {

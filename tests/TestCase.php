@@ -67,7 +67,7 @@ abstract class TestCase extends Orchestra
         $config->set('logging.default', 'null');
 
         $config->set('overwatch.url', 'https://overwatch.test');
-        $config->set('overwatch.token', 'satapp_test');
+        $config->set('overwatch.token', 'test-token');
 
         foreach ($this->overwatch as $key => $value) {
             $config->set('overwatch.'.$key, $value);

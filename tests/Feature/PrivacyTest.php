@@ -168,10 +168,15 @@ it('sends nothing personal over the wire either', function (): void {
     }
 });
 
-it('carries no SAT hostnames', function (): void {
+it('carries no private hostnames', function (): void {
     $root = dirname(__DIR__, 2);
-    // Built in pieces, so this file does not match itself.
-    $banned = ['sat'.'asia', 'sat'.'overwatch', 'singularity'.'aerotech'];
+    // Words no file may contain, by length, kept only as sha256 hashes so
+    // this file names none of them.
+    $banned = [
+        7 => ['c504fcff7a86d473347ce0db02aed638926adbb404ca2cc587645d12ad800d1b'],
+        12 => ['0667ae780377a54bb136b5cc61e207daf108e19fad795b2cec33aea35bb22019'],
+        19 => ['1b74608e1514b0f19b9985c372538a0c901d131772eccdbe38be44dcdf8b173f'],
+    ];
     $skip = ['vendor', '.git', '.phpunit.cache'];
     $scanned = 0;
 
@@ -181,12 +186,22 @@ it('carries no SAT hostnames', function (): void {
     ));
 
     foreach ($files as $file) {
-        $text = strtolower((string) file_get_contents($file->getPathname()));
+        preg_match_all('/[a-z0-9]+/', strtolower((string) file_get_contents($file->getPathname())), $runs);
         $scanned++;
+        $found = [];
 
-        foreach ($banned as $word) {
-            expect(str_contains($text, $word))->toBeFalse(substr($file->getPathname(), strlen($root) + 1).' names '.$word);
+        // Every run of letters and digits, checked at every offset.
+        foreach (array_unique($runs[0]) as $run) {
+            foreach ($banned as $length => $hashes) {
+                for ($i = 0; $i + $length <= strlen($run); $i++) {
+                    if (in_array(hash('sha256', substr($run, $i, $length)), $hashes, true)) {
+                        $found[] = substr($run, $i, $length);
+                    }
+                }
+            }
         }
+
+        expect($found)->toBe([], substr($file->getPathname(), strlen($root) + 1).' names a private hostname');
     }
 
     // src/, config/, docs/, tests/ and the root files at the least.

@@ -9,12 +9,12 @@ use Arisultima\OverwatchAgent\Report\ReportBuilder;
 use Arisultima\OverwatchAgent\Report\TextLimits;
 
 /**
- * Every text field the server checks, with its limit, as the server reads
- * it: a dotted path, `*` for every row of a list.
+ * Every text field the package fits, with its limit: a dotted path, `*`
+ * for every row of a list.
  *
  * @return array<string, int>
  */
-function serverTextLimits(): array
+function textLimits(): array
 {
     return [
         'package.name' => 255,
@@ -69,8 +69,8 @@ function valuesAt(mixed $data, string $path, string $at = ''): array
 }
 
 /**
- * What the server would refuse in a report for its text limits: a field that
- * is not a string, empty once trimmed, or longer than its limit.
+ * What breaks the package's text limits in a report: a field that is not a
+ * string, empty once trimmed, or longer than its limit.
  *
  * @param  array<string, mixed>  $report
  * @return list<string>
@@ -79,7 +79,7 @@ function textViolations(array $report): array
 {
     $violations = [];
 
-    foreach (serverTextLimits() as $path => $max) {
+    foreach (textLimits() as $path => $max) {
         foreach (valuesAt($report, $path) as $at => $value) {
             if (! is_string($value)) {
                 $violations[] = $at.' is not a string';
@@ -145,7 +145,7 @@ it('trims surrounding whitespace and cuts invalid UTF-8 safely', function () {
         ->and(str_starts_with($fitted['app']['environment'], 'prod'))->toBeTrue();
 });
 
-it('builds a report the server takes when the app has long and empty values', function () {
+it('builds a report within the text limits when the app has long and empty values', function () {
     config([
         'app.env' => str_repeat('é', 80),
         'app.timezone' => '',
@@ -170,7 +170,7 @@ it('builds a report the server takes when the app has long and empty values', fu
         ->and(mb_strlen($report['instances'][0]['queues'][0]['name']))->toBe(255);
 });
 
-it('skips and counts packages whose name or version the server would refuse', function () {
+it('skips and counts packages whose name or version is past the text limits', function () {
     $section = Versions::fromRawData([[
         'root' => ['name' => 'acme/app'],
         'versions' => [

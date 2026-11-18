@@ -59,7 +59,7 @@ it('registers nothing when disabled, even with a token', function (): void {
 });
 
 it('registers the middleware and the schedule with a token', function (): void {
-    $this->bootWith(['token' => 'satapp_test', 'url' => 'https://overwatch.test']);
+    $this->bootWith(['token' => 'test-token', 'url' => 'https://overwatch.test']);
 
     expect(app(HttpKernel::class)->hasMiddleware(RecordRequest::class))->toBeTrue();
 

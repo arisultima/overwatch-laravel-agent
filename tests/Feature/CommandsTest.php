@@ -241,12 +241,12 @@ it('test --dry-run still shows the report when not configured, and stamps nothin
 });
 
 it('never prints the token', function (string $command): void {
-    $this->bootWith(['token' => 'satapp_secret_value']);
+    $this->bootWith(['token' => 'secret-token-value']);
     Http::fake(['*' => Http::response(['accepted' => true], 202)]);
 
     [, $output] = runOverwatch($command);
 
-    expect($output)->not->toContain('satapp_secret_value');
+    expect($output)->not->toContain('secret-token-value');
 })->with(['overwatch:install', 'overwatch:test']);
 
 it('warns when the overwatch store keeps counts in no shared place', function (string $command, array $options, string $driver, string $meaning): void {
