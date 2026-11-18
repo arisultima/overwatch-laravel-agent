@@ -10,7 +10,10 @@ the app does.
 
 - PHP 8.3 or newer, Laravel 11, 12 or 13.
 - No runtime dependency beyond Laravel's own components.
-- Never throws into your app, and costs a request no more than a cache write.
+- Never throws into your app. A request usually costs a few cache writes; a
+  sign-in may add one role lookup, and on a database or file cache store a
+  failed sign-in can wait up to about 1 s per distinct set while another
+  request holds its lock (see Known limits).
 
 ## Install
 
@@ -196,8 +199,21 @@ counts twice.
 - Accounts created or deleted through a subclass of the configured user model
   are not counted.
 - On a database or file cache store, under a sign-in attack each failed sign-in
-  rewrites the distinct sets, up to about 80 KB per failure. Use a Redis cache
+  rewrites the distinct sets, up to about 80 KB per failure, and waits up to
+  about 1 s for each set's lock (two sets per failed sign-in). Use a Redis cache
   store for the counters on any app that faces the internet.
+- A successful sign-in checks whether the account holds a privileged role: one
+  role lookup (spatie's `hasAnyRole`, or the `role` or `roles` attribute) unless
+  the app already loaded them.
+- When the overwatch store is down, each process pays for one failed store call,
+  then stops recording for 60 seconds. Under PHP-FPM that pause does not outlive
+  the request, so every request pays the one failed call, as long as the
+  store's connect timeout. Give the overwatch store a Redis connection of its
+  own with a short connect and read timeout (with phpredis, `timeout` and
+  `read_timeout` of 1 in `config/database.php`).
+- Keep every machine's clock in sync (NTP). A minute is reported once it has
+  been over for 10 seconds; a clock further behind than that records counts
+  into a minute that was already sent, and those counts are lost.
 - Each distinct set holds at most 1000 entries per machine per minute; past that
   the count stops at 1000.
 - Health probes time out only as fast as your app's own database, cache and

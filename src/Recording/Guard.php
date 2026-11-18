@@ -13,6 +13,12 @@ use Throwable;
  * runs through quietly(): whatever it throws is swallowed, and after one
  * failure this process stops recording for 60 seconds, so a store that is
  * down costs one failed call a minute instead of one per event.
+ *
+ * The pause is a static, so it lasts only as long as the process keeps it.
+ * A queue worker, Octane or schedule:work keeps it; under PHP-FPM statics
+ * reset with every request, so each request pays one failed store call (as
+ * long as the store's connect timeout) before it stops recording. The README
+ * advises a short connect and read timeout on the overwatch store for that.
  */
 final class Guard
 {
