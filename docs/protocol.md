@@ -139,6 +139,8 @@ One object per machine whose counts are in this report.
 | `errors_truncated` | int | groups left out |
 | `queues` | array | per queue name in the window: `{"name": string, "processed": int, "failed": int, "slowest_ms": int}`, at most 20 |
 
+The server keeps at most 200 instances per app. Past that, an instance of a name it has not seen is left out of the report, minutes and all, and counted in the server's log; the report is still accepted (202) and the known instances are written. The server calls an instance quiet when `quiet` is true or no accepted report has named it for 10 minutes.
+
 ### Minute
 
 ```json
