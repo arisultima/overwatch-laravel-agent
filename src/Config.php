@@ -10,11 +10,12 @@ namespace Arisultima\OverwatchAgent;
 final class Config
 {
     /**
-     * Reporting is on only with a token set and `enabled` left true.
+     * Reporting is on only with `enabled` left true and both the URL and the
+     * token set: exactly when missing() is empty.
      */
     public static function enabled(): bool
     {
-        return (bool) config('overwatch.enabled', true) && self::token() !== '';
+        return (bool) config('overwatch.enabled', true) && self::token() !== '' && self::url() !== '';
     }
 
     /**

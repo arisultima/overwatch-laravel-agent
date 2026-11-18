@@ -65,8 +65,8 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
             $this->commands([InstallCommand::class, TestCommand::class]);
         }
 
-        // Without a token, or with reporting switched off, the package stays
-        // inert: no listeners, no middleware, no schedule entry.
+        // Without a URL or a token, or with reporting switched off, the
+        // package stays inert: no listeners, no middleware, no schedule entry.
         if (! Config::enabled()) {
             return;
         }

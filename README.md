@@ -51,8 +51,9 @@ php artisan overwatch:test             # send it once and say what the answer me
 ```
 
 `overwatch:test` never marks anything as sent, so the next scheduled report still
-carries the same minutes. It exits 0 only when the server took the report. Both
-commands say which setting is missing when the package is not configured.
+carries the same minutes. When it sends, it exits 0 only when the server took the
+report; with `--dry-run` it exits 0 when the package is configured. Both commands
+say which setting is missing, and exit 1, when the package is not configured.
 
 If your config is cached, run `php artisan config:cache` again after editing
 `.env`.
@@ -81,8 +82,30 @@ One JSON object a minute, gzipped, posted to
 `Authorization` header. The full contract, every field and every cap, is in
 [`docs/protocol.md`](docs/protocol.md).
 
-- **Per machine, per closed minute:** request counts by status class (and 401,
-  403, 419, 429 on their own), slow requests, a request duration histogram, slow
+Everything in it, in plain words:
+
+- **About the report:** the schema number, this package's name and version,
+  when the report was built, the instance name of the machine that sent it, the
+  window of minutes it covers, and how many minutes were lost since the last
+  report the server took (`dropped_minutes`).
+- **About the app:** `APP_ENV`, whether debug is on, the PHP and Laravel
+  versions, and the app timezone.
+- **Health checks,** run by the machine that sends the report: database latency,
+  cache, storage (writable, and the free bytes on that machine's disk), pending
+  migrations, the default queue (driver, pending jobs, the age of the oldest
+  waiting job, failed jobs), the scheduler, Redis latency when Redis is
+  configured, and Horizon's supervisor count and status when it is installed.
+- **Queue depths:** for each queue name in the `queues` setting, the connection
+  name, the queue name, pending jobs and the age of the oldest waiting one.
+- **Hygiene flags:** debug on in production, HTTPS in `APP_URL`, secure session
+  cookie, maintenance mode, config and routes cached, app key set.
+- **Per machine (instance):** its instance name, **its hostname, always**, even
+  when `OVERWATCH_INSTANCE` gives it another name, when it last stamped its
+  local probes and whether it has gone quiet, and from that stamp its PHP version
+  and its storage check (writable and free bytes on its own disk).
+- **Per machine, per closed minute:** requests by status class, with 401, 403,
+  419 and 429 also counted on their own (a 401 is how a failed API token or a
+  missing session shows), slow requests, a request duration histogram, slow
   queries, jobs processed and failed, exceptions reported, and the sign-in
   counters: sign-ins, privileged sign-ins, failed sign-ins (and those naming an
   account that does not exist), lockouts, throttled sign-ins, failed two-factor
@@ -93,15 +116,17 @@ One JSON object a minute, gzipped, posted to
   account, and how many different accounts signed in. Only a keyed hash of each
   address or account is kept in your cache, never the value, and only the counts
   are sent.
-- **Error groups:** the exception class, the first frame in your own code (as a
-  path relative to the app, with its line) and how often it happened. The
-  fingerprint is the same one `sat/diagnostics` computes, so the two line up.
-- **Health checks:** database and Redis latency, cache, storage, pending
-  migrations, queue depth and failed jobs, Horizon when it is installed.
-- **Hygiene flags:** debug on in production, HTTPS in `APP_URL`, secure session
-  cookie, maintenance mode, config and routes cached, app key set.
-- **Versions:** the installed Composer packages, at most every 6 hours or when
-  `composer.lock` changes.
+- **Error groups per machine:** the exception class, the first frame in your own
+  code (as a path relative to the app root, with its line), a fingerprint of the
+  two and how often it happened. An in-app error recorder that uses the same
+  fingerprint can match its own captured errors to these groups.
+- **Queues per machine:** for each queue name its jobs ran on, the jobs
+  processed and failed and the slowest job in milliseconds.
+- **Versions:** a hash of `composer.lock` and every installed Composer package
+  as name, version and whether it is a dev package, at most every 6 hours or as
+  soon as `composer.lock` changes.
+
+Lists cut to fit the size caps say how many entries were left out.
 
 ### What it never sends
 
@@ -125,7 +150,9 @@ your scheduler.
 
 Each machine is an instance with its own counters. The name is the hostname;
 set `OVERWATCH_INSTANCE` on each machine when hostnames are not stable
-(containers, autoscaling groups).
+(containers, autoscaling groups). Give every machine its own value: machines
+sharing one name, for example a value baked into an image, are merged into one
+instance and their counts mixed.
 
 - With a shared cache store (the same Redis for every machine), one server at a
   time runs the scheduled report and sends every machine's minutes in it.
@@ -154,9 +181,10 @@ counts twice.
 
 ## Known limits
 
-- **Octane:** request durations are measured from `LARAVEL_START`, which in a
-  long-lived Octane worker does not mark the start of each request, so request
-  durations and slow request counts are wrong under Octane.
+- **Octane and other long-running servers:** request durations are measured
+  from `LARAVEL_START` when it is defined, else from the package's middleware.
+  In a worker that serves many requests neither may mark the true start of each
+  request, so check the durations and slow request counts before trusting them.
 - Requests stopped by global middleware that runs before the package's (for
   example maintenance mode) are still counted as requests.
 - An exception class with its own `report()` method, or one the app stops

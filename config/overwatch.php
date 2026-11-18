@@ -5,9 +5,9 @@ declare(strict_types=1);
 return [
 
     /*
-    | Reporting is on only when this is true AND a token is set. With either
-    | missing the package registers nothing: no listeners, no middleware and
-    | no schedule entry.
+    | Reporting is on only when this is true AND both the url and the token
+    | below are set. With any of them missing the package registers nothing:
+    | no listeners, no middleware and no schedule entry.
     */
     'enabled' => env('OVERWATCH_ENABLED', true),
 
@@ -21,7 +21,8 @@ return [
 
     /*
     | The name this machine reports under. Null uses the hostname; set it when
-    | hostnames are not stable (containers, autoscaling).
+    | hostnames are not stable (containers, autoscaling), to a different value
+    | on every machine: machines sharing one name are counted as one.
     */
     'instance' => env('OVERWATCH_INSTANCE'),
 
@@ -53,12 +54,6 @@ return [
     | Route names of the sign-in endpoints, for counting throttled sign-ins.
     */
     'signin_routes' => ['login', 'login.store', 'two-factor.login', 'two-factor.login.store'],
-
-    /*
-    | Request paths starting with this prefix are treated as API routes, so a
-    | 401 there reads as a failed API token rather than a missing session.
-    */
-    'api_prefix' => 'api/',
 
     /*
     | Queue names on the default queue connection whose depth and oldest

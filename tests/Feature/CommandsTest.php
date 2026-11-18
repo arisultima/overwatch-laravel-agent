@@ -7,6 +7,7 @@ use Arisultima\OverwatchAgent\Recording\Buckets;
 use Arisultima\OverwatchAgent\Recording\Keys;
 use Arisultima\OverwatchAgent\Recording\Recorder;
 use Arisultima\OverwatchAgent\Report\Progress;
+use Arisultima\OverwatchAgent\Support\Instance;
 use Arisultima\OverwatchAgent\Support\Store;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -150,6 +151,8 @@ it('test sends and reports the status without marking minutes sent', function ()
     Http::assertSentCount(1);
     nothingMarked();
 
+    expect(Store::cache()->has(Keys::stamp('web-1')))->toBeTrue();
+
     // The real report still sends the minute the test sent, and marks it.
     expect(Artisan::call('overwatch:report'))->toBe(0)
         ->and(minutesOf(instanceIn(receivedReport(), 'web-1')))->toBe(['2026-11-18T13:05:00Z'])
@@ -220,7 +223,7 @@ it('says what is missing when not configured', function (string $command, array 
     'test, switched off' => ['overwatch:test', ['enabled' => false], 'OVERWATCH_ENABLED'],
 ]);
 
-it('test --dry-run still shows the report when not configured', function (): void {
+it('test --dry-run still shows the report when not configured, and stamps nothing', function (): void {
     $this->bootWith(['token' => null]);
     Http::fake();
 
@@ -228,7 +231,9 @@ it('test --dry-run still shows the report when not configured', function (): voi
 
     expect($code)->toBe(1)
         ->and($output)->toContain('OVERWATCH_TOKEN')
-        ->and(printedReport($output)['schema'])->toBe(1);
+        ->and(printedReport($output)['schema'])->toBe(1)
+        ->and(Store::cache()->has(Keys::stamp(Instance::name())))->toBeFalse()
+        ->and(Store::cache()->has(Keys::instances()))->toBeFalse();
 
     Http::assertNothingSent();
 });

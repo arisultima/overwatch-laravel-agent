@@ -49,7 +49,11 @@ final class TestCommand extends Command
         }
 
         try {
-            InstanceStamp::maybe();
+            // An unconfigured app records nothing, a stamp included.
+            if ($missing === []) {
+                InstanceStamp::maybe();
+            }
+
             $report = $this->laravel->make(ReportBuilder::class)->build(Carbon::now())['report'];
             $json = json_encode($report, self::PRINT_FLAGS);
         } catch (Throwable $e) {

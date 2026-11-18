@@ -39,6 +39,14 @@ it('registers nothing without a token', function (): void {
         ->and(overwatchSchedule())->toBe([]);
 });
 
+it('registers nothing with a token but no url', function (): void {
+    $this->bootWith(['url' => null]);
+
+    expect(Event::hasListeners(Failed::class))->toBeFalse()
+        ->and(app(HttpKernel::class)->hasMiddleware(RecordRequest::class))->toBeFalse()
+        ->and(overwatchSchedule())->toBe([]);
+});
+
 it('registers nothing when disabled, even with a token', function (): void {
     $this->bootWith(['enabled' => false]);
 

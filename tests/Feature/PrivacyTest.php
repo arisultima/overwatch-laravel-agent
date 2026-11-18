@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Arisultima\OverwatchAgent\Report\ReportBuilder;
 use Arisultima\OverwatchAgent\Report\Trimmer;
 use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Events\QueryExecuted;
@@ -34,12 +36,17 @@ final class PrivacyMailJob implements ShouldQueue
 /**
  * What must never leave the app, whatever it did.
  */
-const PRIVATE_VALUES = ['@example.com', '192.0.2.44', '4111111111111111', 'token=abc', "RuntimeException('"];
+const PRIVATE_VALUES = [
+    '@example.com', '192.0.2.44', '4111111111111111', 'token=abc', "RuntimeException('",
+    // The failed sign-ins' password, and the id and name of the account that signed in.
+    'hunter2', '01JZPRIVACYUSER0000000042', 'Ivan Petrov',
+];
 
 /**
  * A busy minute of an app full of personal data: requests with a query
- * string, failed sign-ins from one address, a reported exception, a slow
- * query with bindings and a failing job, all at 13:05.
+ * string, failed sign-ins from one address, a sign-in by a named account, a
+ * reported exception, a slow query with bindings and a failing job, all at
+ * 13:05.
  */
 function noisyMinute(): void
 {
@@ -78,6 +85,12 @@ function noisyMinute(): void
             ->assertStatus(422);
     }
 
+    event(new Login('web', new GenericUser([
+        'id' => '01JZPRIVACYUSER0000000042',
+        'name' => 'Ivan Petrov',
+        'email' => 'ivan@example.com',
+    ]), false));
+
     report(new RuntimeException('card 4111111111111111 for erin@example.com'));
 
     event(new QueryExecuted('select * from users where email = ?', ['frank@example.com'], 900.0, DB::connection('testing')));
@@ -101,7 +114,8 @@ it('a report from a noisy app carries no personal data', function (): void {
     config(['queue.default' => 'database', 'overwatch.queues' => ['default', 'mail']]);
 
     $built = app(ReportBuilder::class)->build(at('13:06:15'));
-    $json = json_encode($built['report'], JSON_THROW_ON_ERROR);
+    // Slashes unescaped, so a path in the report would read as one.
+    $json = json_encode($built['report'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     $body = Trimmer::encode($built['report']);
 
     $minute = instanceIn($built['report'], 'web-1')['minutes'][0];
@@ -110,6 +124,8 @@ it('a report from a noisy app carries no personal data', function (): void {
     expect($minute['counters']['http.requests'])->toBe(4)
         ->and($minute['counters']['auth.login_failed'])->toBe(3)
         ->and($minute['counters']['auth.login_failed_unknown'])->toBe(3)
+        ->and($minute['counters']['auth.login'])->toBe(1)
+        ->and($minute['distinct']['auth.login_accounts'])->toBe(1)
         ->and($minute['counters']['errors.total'])->toBeGreaterThanOrEqual(2)
         ->and($minute['counters']['db.slow_queries'])->toBe(1)
         ->and($minute['counters']['jobs.failed'])->toBe(1)
@@ -147,6 +163,8 @@ it('sends nothing personal over the wire either', function (): void {
         foreach (PRIVATE_VALUES as $value) {
             expect($text)->not->toContain($value);
         }
+
+        expect($text)->not->toContain(dirname(__DIR__, 2));
     }
 });
 
