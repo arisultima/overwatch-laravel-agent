@@ -77,7 +77,7 @@ final class Sender
             ->withToken(Config::token())
             ->withHeaders([
                 'Content-Encoding' => 'gzip',
-                // The server's errors come back as JSON, not a redirect.
+                // Ask for errors as JSON, not a redirect.
                 'Accept' => 'application/json',
             ])
             ->withUserAgent('overwatch-laravel-agent/'.Package::version())

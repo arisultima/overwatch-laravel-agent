@@ -129,8 +129,8 @@ final class Versions
      * name, at most 1500. The app's own root package and packages that are
      * only replaced or provided (no version installed) are left out. A
      * package whose name or version is empty or over 255 characters is left
-     * out too and counted in `packages_truncated`, as the server would: a
-     * cut name or version would name some other release.
+     * out too and counted in `packages_truncated`: a cut name or version
+     * would name some other release.
      *
      * @internal
      *

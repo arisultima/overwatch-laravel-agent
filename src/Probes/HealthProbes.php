@@ -17,8 +17,7 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * The report's `checks`: whether the app works from the inside, with the
- * field names of the app_health pull check so one evaluator reads both.
+ * The report's `checks`: whether the app works from the inside.
  *
  * Every probe is wrapped. A probe that throws reports `ok` false and the
  * short class name of what was thrown, never its message: a driver message

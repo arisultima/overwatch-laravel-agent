@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Support;
 
 /**
- * A text field as the server takes it: valid UTF-8, no surrounding
- * whitespace, never empty and at most so many characters. The server
- * refuses a whole report over one field that is not.
+ * A text field as the package sends it: valid UTF-8, no surrounding
+ * whitespace, never empty and at most so many characters.
  */
 final class Text
 {
@@ -35,7 +34,7 @@ final class Text
     }
 
     /**
-     * Whether the value is already a field the server takes, as it is.
+     * Whether the value already meets that rule, as it is.
      */
     public static function fits(mixed $value, int $max): bool
     {

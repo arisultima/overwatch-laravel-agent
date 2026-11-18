@@ -15,9 +15,8 @@ final class Instance
 
     /**
      * OVERWATCH_INSTANCE when set, else the hostname, lowercased and cut to
-     * 100 characters. The server compares instance names without case, so
-     * machines named "Web-1" and "web-1" are one instance: lowercasing here
-     * puts their counts under one name instead of two the server refuses.
+     * 100 characters, so machines named "Web-1" and "web-1" report as one
+     * instance under one name.
      */
     public static function name(): string
     {

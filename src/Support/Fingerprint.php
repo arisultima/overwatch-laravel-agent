@@ -8,9 +8,7 @@ use Throwable;
 
 /**
  * What makes two exceptions the same problem: the class and the first frame
- * in the app's own code. The same value sat/diagnostics computes, so an error
- * group in a report can be matched to its captured events there; where the
- * two differ (anonymous classes, entry scripts) it says so below.
+ * in the app's own code, hashed as sha256 of "class|location".
  *
  * Only the class, the file paths and the line numbers of the trace are read;
  * never the message or the frame arguments.
@@ -50,9 +48,7 @@ final class Fingerprint
      * PHP names one "RuntimeException@anonymous", a NUL byte, then the
      * absolute path and line where it is declared, which would put a server
      * path in the report and change the fingerprint with every release
-     * directory. The cut name is both stored and hashed, so for anonymous
-     * classes only this fingerprint knowingly differs from sat/diagnostics,
-     * which hashes the raw name.
+     * directory. The cut name is both stored and hashed.
      */
     public static function className(Throwable $e): string
     {
@@ -95,12 +91,8 @@ final class Fingerprint
      * The path relative to the app root when the file is in the app's own
      * code: under the root, not under a vendor/ directory there and not one
      * of the entry scripts. Judged on the relative path, so an app deployed
-     * below a folder called vendor still counts.
-     *
-     * sat/diagnostics counts the entry scripts as in-app, so where one of
-     * them is the only in-app frame the two fingerprints differ: here the
-     * location falls to "unknown" (or a deeper in-app frame), there it is the
-     * entry script.
+     * below a folder called vendor still counts. Where an entry script is
+     * the only in-app frame, the location falls to "unknown".
      */
     private static function inApp(string $file, string $base): ?string
     {

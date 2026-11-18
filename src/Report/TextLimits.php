@@ -8,10 +8,10 @@ use Arisultima\OverwatchAgent\Support\Instance;
 use Arisultima\OverwatchAgent\Support\Text;
 
 /**
- * The schema's text limits, applied to a built report: every text field the
- * server checks is cut to its limit by characters and filled with "unknown"
- * when it would be empty, so no single value from the app (a long queue
- * name, an empty APP_ENV) gets the whole report refused. Nothing else in
+ * The package's text limits, applied to a built report: every text field
+ * is cut to its limit by characters and filled with "unknown" when it
+ * would be empty, so no single value from the app (a long queue name, an
+ * empty APP_ENV) leaves a field outside its limit. Nothing else in
  * the report is touched. The `versions` rows are left to Versions, which
  * skips a package it cannot send whole rather than cut its name.
  */

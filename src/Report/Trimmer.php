@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Report;
 
 /**
- * Fits a report into the schema's size caps, and is the one JSON encoder for
- * reports, so what is measured here is what is sent.
+ * Fits a report into the package's size caps, and is the one JSON encoder
+ * for reports, so what is measured here is what is sent.
  *
- * The lists are cut in the schema's order: error groups beyond 20 per
- * instance, then queue depths beyond 20, then the oldest minutes across all
- * instances until the report without `versions` fits in 64 KB. Each cut
- * list sets its `*_truncated` count, and each minute cut is also counted
- * into `dropped_minutes`. Should the report still not fit with every minute
- * gone (50 instances with 20 long error groups each can be larger than 64
- * KB), the smallest error groups go next, so the checks still arrive rather
- * than the whole report being refused; after them, each instance's queues
- * down to 5. The `versions` section has its own cap and loses packages from
- * the end of its sorted list.
+ * The lists are cut in this order: error groups beyond 20 per instance,
+ * then queue depths beyond 20, then the oldest minutes across all instances
+ * until the report without `versions` fits in 64 KB. Each cut list sets its
+ * `*_truncated` count, and each minute cut is also counted into
+ * `dropped_minutes`. Should the report still not fit with every minute gone
+ * (50 instances with 20 long error groups each can be larger than 64 KB),
+ * the smallest error groups go next, so the checks still fit; after them,
+ * each instance's queues down to 5. The `versions` section has its own cap
+ * and loses packages from the end of its sorted list.
  *
  * Lists are expected in the order the builder makes them: minutes oldest
  * first, error groups largest first.

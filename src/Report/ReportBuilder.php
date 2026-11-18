@@ -337,9 +337,9 @@ final class ReportBuilder
      * machine always among them (it may not have stamped yet, or the store
      * may be down). At most 50: past that, the latest to join wait.
      *
-     * Never two that the server would take for one: it compares names
-     * without case, and refuses a report that repeats one. Instance names
-     * are lowercased, so only a stamp from an older release can collide.
+     * Never two names that are the same once lowercased and cut to their
+     * limit: a report lists each instance once. Instance names are
+     * lowercased, so only a stamp from an older release can collide.
      *
      * @param  list<string>  $stamped
      * @return list<string>
@@ -359,8 +359,8 @@ final class ReportBuilder
     }
 
     /**
-     * The names left out because another is the same to the server (fitted
-     * to its limit and lowercased). Of such names the reporter is kept, else
+     * The names left out because another is the same once fitted to its
+     * limit and lowercased. Of such names the reporter is kept, else
      * the lowercase one (this release's), else the first; the others wait
      * until their stamp expires within the hour.
      *

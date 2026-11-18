@@ -86,7 +86,7 @@ final class ReportCommand extends Command
      * one does nothing.
      *
      * When taking the lock throws, the run still builds and sends, so the
-     * checks tell Overwatch the store is in trouble, but marks nothing: an
+     * checks report that the store is in trouble, but marks nothing: an
      * unlocked run could overlap a locked one, send its minutes again or
      * move progress back. A store without locks (every store Laravel ships
      * has them; only a custom one may not) runs unlocked and marks.
