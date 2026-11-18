@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use Arisultima\OverwatchAgent\Tests\Fixtures\SoftUser;
 use Arisultima\OverwatchAgent\Tests\Fixtures\User;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Foundation\Auth\User as FrameworkUser;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 beforeEach(function (): void {
     $this->freezeTime();
 });
@@ -64,6 +67,32 @@ it('counts accounts created and deleted', function (): void {
     expect($counted['auth.accounts_created'])->toBe(2)
         ->and($counted['auth.accounts_deleted'])->toBe(1)
         ->and(arrayStoreHolds('one@example.com'))->toBeFalse();
+});
+
+it('counts a soft-deleted account once, not again when force deleted', function (): void {
+    $this->bootWith(['user_model' => SoftUser::class]);
+    $this->freezeTime();
+    $this->loadLaravelMigrations();
+
+    Schema::table('users', fn (Blueprint $table) => $table->softDeletes());
+
+    $trashed = SoftUser::create(['name' => 'One', 'email' => 'one@example.com', 'password' => 'x']);
+    $live = SoftUser::create(['name' => 'Two', 'email' => 'two@example.com', 'password' => 'x']);
+
+    $trashed->delete();
+
+    expect(countedNow()['auth.accounts_deleted'])->toBe(1);
+
+    $trashed->forceDelete();
+
+    expect(countedNow()['auth.accounts_deleted'])->toBe(1)
+        ->and(SoftUser::withTrashed()->count())->toBe(1);
+
+    // Force deleting an account that was never trashed is its removal.
+    $live->forceDelete();
+
+    expect(countedNow()['auth.accounts_deleted'])->toBe(2)
+        ->and(countedNow()['auth.accounts_created'])->toBe(2);
 });
 
 it('falls back to the auth provider model for accounts', function (): void {

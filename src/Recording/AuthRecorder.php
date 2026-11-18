@@ -88,9 +88,18 @@ final class AuthRecorder
     }
 
     /**
-     * The account a failed sign-in named: the first credential that is not
-     * a password and holds a string (email, username, whatever the app signs
-     * in with), trimmed and lowercased so case variants are one account.
+     * Fields that name the account, tried in order before any other
+     * credential: Fortify's configured username field (added in front when
+     * set), then email, then username.
+     */
+    private const ACCOUNT_FIELDS = ['email', 'username'];
+
+    /**
+     * The account a failed sign-in named, trimmed and lowercased so case
+     * variants are one account. The known account fields are tried first,
+     * so a scoping credential (a tenant, a team) passed before the email is
+     * not taken for the account; failing those, the first credential that is
+     * not a password and holds a string.
      *
      * @param  mixed  $credentials
      */
@@ -100,19 +109,43 @@ final class AuthRecorder
             return null;
         }
 
+        $fortify = config('fortify.username');
+        $fields = is_string($fortify) && $fortify !== ''
+            ? [$fortify, ...self::ACCOUNT_FIELDS]
+            : self::ACCOUNT_FIELDS;
+
+        foreach ($fields as $field) {
+            $account = self::accountValue($credentials[$field] ?? null);
+
+            if ($account !== null) {
+                return $account;
+            }
+        }
+
         foreach ($credentials as $field => $value) {
-            if (str_contains(strtolower((string) $field), 'password') || ! is_string($value)) {
+            if (str_contains(strtolower((string) $field), 'password')) {
                 continue;
             }
 
-            $account = mb_strtolower(trim($value));
+            $account = self::accountValue($value);
 
-            if ($account !== '') {
+            if ($account !== null) {
                 return $account;
             }
         }
 
         return null;
+    }
+
+    private static function accountValue(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $account = mb_strtolower(trim($value));
+
+        return $account === '' ? null : $account;
     }
 
     private function address(): ?string
@@ -146,8 +179,17 @@ final class AuthRecorder
 
         $held = [];
 
+        // Each read on its own, so one that throws (a lazy load the app
+        // forbids, a `role` method that is not a relationship) still lets
+        // the other be tried.
         foreach (['role', 'roles'] as $attribute) {
-            foreach (self::names(data_get($user, $attribute)) as $name) {
+            try {
+                $value = data_get($user, $attribute);
+            } catch (Throwable) {
+                continue;
+            }
+
+            foreach (self::names($value) as $name) {
                 $held[] = $name;
             }
         }

@@ -209,7 +209,7 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
             $model = (new ReflectionClass($model))->getName();
 
             $events->listen('eloquent.created: '.$model, static fn () => $privilege()->count('auth.accounts_created'));
-            $events->listen('eloquent.deleted: '.$model, static fn () => $privilege()->count('auth.accounts_deleted'));
+            $events->listen('eloquent.deleted: '.$model, static fn (Model $user) => $privilege()->accountDeleted($user));
         }
 
         // The gate's final answer, after the app's own after callbacks, so

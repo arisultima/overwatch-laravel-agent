@@ -6,6 +6,7 @@ namespace Arisultima\OverwatchAgent\Recording;
 
 use Illuminate\Auth\Access\Events\GateEvaluated;
 use Illuminate\Auth\Access\Response;
+use Illuminate\Database\Eloquent\Model;
 use Throwable;
 
 /**
@@ -21,6 +22,26 @@ final class PrivilegeRecorder
     {
         try {
             $this->recorder->count($key);
+        } catch (Throwable) {
+            // Recording never throws into the app.
+        }
+    }
+
+    /**
+     * One account removed, counted once. With SoftDeletes the soft delete
+     * is the removal: a later force delete of that trashed account raises
+     * `deleted` again and is not counted. A force delete of an account that
+     * was never trashed is its removal, and is counted.
+     */
+    public function accountDeleted(Model $user): void
+    {
+        try {
+            if (method_exists($user, 'isForceDeleting') && $user->isForceDeleting()
+                && method_exists($user, 'trashed') && $user->trashed()) {
+                return;
+            }
+
+            $this->recorder->count('auth.accounts_deleted');
         } catch (Throwable) {
             // Recording never throws into the app.
         }

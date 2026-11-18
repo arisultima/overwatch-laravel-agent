@@ -101,6 +101,32 @@ it('takes the account from the first credential that is not a password', functio
         ->and(setNow('auth.login_failed_accounts'))->toBe(['distinct' => 1, 'max' => 2, 'capped' => false]);
 });
 
+it('takes the account from the known account fields before a scoping credential', function (): void {
+    fromAddress('198.51.100.1');
+
+    $attempt = fn (string $email) => event(new Failed('web', null, [
+        'tenant' => 'acme',
+        'email' => $email,
+        'password' => 'secret',
+    ]));
+
+    $attempt('a@example.com');
+    $attempt('b@example.com');
+    $attempt('c@example.com');
+
+    expect(setNow('auth.login_failed_accounts'))->toBe(['distinct' => 3, 'max' => 1, 'capped' => false]);
+});
+
+it('takes Fortify\'s username field first when it is set', function (): void {
+    config(['fortify.username' => 'login']);
+    fromAddress('198.51.100.1');
+
+    event(new Failed('web', null, ['tenant' => 'acme', 'email' => 'shared@example.com', 'login' => 'alice', 'password' => 'x']));
+    event(new Failed('web', null, ['tenant' => 'acme', 'email' => 'shared@example.com', 'login' => 'bob', 'password' => 'x']));
+
+    expect(setNow('auth.login_failed_accounts'))->toBe(['distinct' => 2, 'max' => 1, 'capped' => false]);
+});
+
 it('counts sign-ins and the different accounts', function (): void {
     event(new Login('web', new GenericUser(['id' => 1]), false));
     event(new Login('web', new GenericUser(['id' => 1]), false));
@@ -139,6 +165,24 @@ it('reads a role or roles attribute when there is no hasAnyRole', function (): v
 
     expect(countedNow()['auth.login'])->toBe(8)
         ->and(countedNow()['auth.login_privileged'])->toBe(5);
+});
+
+it('still reads roles when reading role throws', function (): void {
+    $user = new class(['id' => 1, 'role' => 'x', 'roles' => ['admin']]) extends GenericUser
+    {
+        public function __get($key)
+        {
+            if ($key === 'role') {
+                throw new LogicException('role is not a relationship');
+            }
+
+            return parent::__get($key);
+        }
+    };
+
+    event(new Login('web', $user, false));
+
+    expect(countedNow()['auth.login_privileged'])->toBe(1);
 });
 
 it('counts privileged roles from config', function (): void {
