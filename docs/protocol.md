@@ -81,6 +81,8 @@ There is no app name or id anywhere: the token says which app it is.
 {"environment": "production", "debug": false, "php": "8.4.27", "laravel": "13.4.0", "timezone": "Asia/Kuala_Lumpur"}
 ```
 
+The server orders reports by when it received them, never by `sent_at`. It accepts the report but writes no minute dated more than 2 days before it received the report or more than 5 minutes after, so a node whose clock is far out loses those minutes rather than skewing the series.
+
 ## Checks
 
 Exactly the field names of the `app_health` pull check, so one evaluator reads both. Every check is either `{"ok": true, ...fields}` or `{"ok": false, "error": string}`, where `error` is the short class name of what was thrown (for example `QueryException`), never the exception message.
