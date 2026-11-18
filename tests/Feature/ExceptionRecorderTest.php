@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use Arisultima\OverwatchAgent\Recording\ErrorDetails;
 use Arisultima\OverwatchAgent\Support\Fingerprint;
+use Arisultima\OverwatchAgent\Tests\Fixtures\ForwardingHandler;
+use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Foundation\Exceptions\Handler;
 
 /**
  * The package root, used as the app's base path in this file so the fixture
@@ -164,4 +167,85 @@ it('names an anonymous exception class without its file path', function (): void
         ])
         ->and(arrayStoreHolds(__FILE__))->toBeFalse()
         ->and(arrayStoreHolds('bob@example.com'))->toBeFalse();
+});
+
+it('counts an exception once in a console process with collision installed', function (): void {
+    // Collision resolves the app's handler while it registers and binds its
+    // own over it, which forwards reportable() to the app's handler.
+    $this->earlierProviders = [\NunoMaduro\Collision\Adapters\Laravel\CollisionServiceProvider::class];
+    $this->environment = 'local';
+    $this->bootWith([]);
+    $this->freezeTime();
+
+    expect(app()->runningInConsole())->toBeTrue()
+        ->and(app(ExceptionHandler::class))->toBeInstanceOf(\NunoMaduro\Collision\Adapters\Laravel\ExceptionHandler::class);
+
+    report(new RuntimeException('once'));
+
+    expect(countedNow()['errors.total'])->toBe(1);
+});
+
+it('counts an exception once when a decorated handler is resolved again', function (): void {
+    $inner = app(ExceptionHandler::class);
+
+    app()->singleton(ExceptionHandler::class, fn (): ExceptionHandler => new ForwardingHandler($inner));
+    app(ExceptionHandler::class);
+
+    // Resolved again: a second decorator over the same handler.
+    app()->forgetInstance(ExceptionHandler::class);
+    app(ExceptionHandler::class);
+
+    // And decorated twice over.
+    app()->singleton(ExceptionHandler::class, fn (): ExceptionHandler => new ForwardingHandler(new ForwardingHandler($inner)));
+    app(ExceptionHandler::class);
+
+    report(new RuntimeException('once'));
+
+    expect(countedNow()['errors.total'])->toBe(1);
+});
+
+it('counts through a decorator that has no reportable()', function (): void {
+    // A handler built by hand, so the provider's hook has not seen it.
+    $inner = new Handler(app());
+
+    app()->singleton(ExceptionHandler::class, fn (): ExceptionHandler => new class($inner) implements ExceptionHandler
+    {
+        public function __construct(private readonly ExceptionHandler $inner) {}
+
+        public function report(Throwable $e): void
+        {
+            $this->inner->report($e);
+        }
+
+        public function shouldReport(Throwable $e): bool
+        {
+            return $this->inner->shouldReport($e);
+        }
+
+        public function render($request, Throwable $e)
+        {
+            return $this->inner->render($request, $e);
+        }
+
+        public function renderForConsole($output, Throwable $e): void
+        {
+            $this->inner->renderForConsole($output, $e);
+        }
+    });
+    app(ExceptionHandler::class);
+
+    report(new RuntimeException('through'));
+
+    expect(countedNow()['errors.total'])->toBe(1);
+});
+
+it('counts on a handler that replaces the app handler after boot', function (): void {
+    app(ExceptionHandler::class);
+
+    app()->singleton(ExceptionHandler::class, fn ($app): ExceptionHandler => new Handler($app));
+    app(ExceptionHandler::class);
+
+    report(new RuntimeException('replaced'));
+
+    expect(countedNow()['errors.total'])->toBe(1);
 });

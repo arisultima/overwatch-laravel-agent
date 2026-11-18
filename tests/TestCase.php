@@ -23,6 +23,19 @@ abstract class TestCase extends Orchestra
      */
     protected array $overwatch = [];
 
+    /**
+     * Providers the app registers before this package's, as an app's own
+     * providers and auto-discovered ones are.
+     *
+     * @var list<class-string>
+     */
+    protected array $earlierProviders = [];
+
+    /**
+     * The app environment on the next boot, when it is not "testing".
+     */
+    protected ?string $environment = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -35,7 +48,12 @@ abstract class TestCase extends Orchestra
 
     protected function getPackageProviders($app): array
     {
-        return [OverwatchAgentServiceProvider::class];
+        // Read just before the providers register, unlike defineEnvironment().
+        if ($this->environment !== null) {
+            $app['env'] = $this->environment;
+        }
+
+        return [...$this->earlierProviders, OverwatchAgentServiceProvider::class];
     }
 
     protected function defineEnvironment($app): void
