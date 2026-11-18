@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Arisultima\OverwatchAgent\Recording\Buckets;
 use Arisultima\OverwatchAgent\Recording\DistinctSets;
 use Arisultima\OverwatchAgent\Recording\LockedDistinctSets;
 use Arisultima\OverwatchAgent\Recording\Recorder;
@@ -131,4 +132,31 @@ it('drops one sample rather than wait past a second for a held lock', function (
     expect($waited)->toBeLessThan(1.2)
         ->and($sets->sizes('web-1', '202611181305', 'auth.login_failed_sources'))
         ->toBe(['distinct' => 1, 'max' => 1, 'capped' => false]);
+});
+
+it('counts and sizes sets under a Redis connection prefix', function (): void {
+    $connectionPrefix = 'overwatch-conn-'.strtolower(bin2hex(random_bytes(4))).'-';
+    $prefix = $this->useDriver('redis', $connectionPrefix);
+    $buckets = app(Buckets::class);
+    $sets = app(DistinctSets::class);
+
+    $buckets->increment('web-1', '202611181305', 'http.requests', 2);
+    $buckets->max('web-1', '202611181305', 'queue.mail.slowest_ms', 900);
+
+    for ($i = 0; $i < 1001; $i++) {
+        $sets->add('web-1', '202611181305', 'auth.login_failed_sources', '198.51.100.'.$i);
+    }
+
+    $stored = array_keys(redisDump($prefix));
+
+    expect($buckets->read('web-1', ['202611181305']))
+        ->toBe(['202611181305' => ['http.requests' => 2, 'queue.mail.slowest_ms' => 900]])
+        ->and($sets->sizes('web-1', '202611181305', 'auth.login_failed_sources'))
+        ->toBe(['distinct' => 1000, 'max' => 1, 'capped' => true])
+        ->and($stored)->toHaveCount(3)
+        ->and(array_filter($stored, fn (string $key): bool => ! str_starts_with($key, $connectionPrefix.$prefix)))->toBe([]);
+
+    $buckets->forget('web-1', ['202611181305']);
+
+    expect($buckets->read('web-1', ['202611181305']))->toBe(['202611181305' => []]);
 });

@@ -68,10 +68,11 @@ abstract class TestCase extends Orchestra
 
     /**
      * Record on the array store ('cache') or on Redis ('redis'). Redis runs
-     * under a prefix of its own and its keys are deleted afterwards; the test
-     * is skipped when no Redis server answers. Returns the key prefix.
+     * under a cache prefix of its own (plus the given connection prefix) and
+     * its keys are deleted afterwards; the test is skipped when no Redis
+     * server answers. Returns the cache prefix.
      */
-    protected function useDriver(string $driver): string
+    protected function useDriver(string $driver, string $connectionPrefix = ''): string
     {
         if ($driver !== 'redis') {
             return (string) config('cache.prefix');
@@ -81,7 +82,7 @@ abstract class TestCase extends Orchestra
             $this->markTestSkipped('Redis is not reachable at REDIS_HOST.');
         }
 
-        $prefix = useRedisCache();
+        $prefix = useRedisCache($connectionPrefix);
 
         $this->beforeApplicationDestroyed(fn () => forgetRedisKeys($prefix));
 
