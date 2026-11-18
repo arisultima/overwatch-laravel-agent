@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Arisultima\OverwatchAgent\Report;
 
 use Arisultima\OverwatchAgent\Config;
+use Arisultima\OverwatchAgent\Support\Fingerprint;
 use Arisultima\OverwatchAgent\Support\Package;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
@@ -36,7 +37,8 @@ final class Sender
     public function __construct(private readonly Factory $http) {}
 
     /**
-     * Never throws: whatever goes wrong before an answer is a Keep.
+     * Never throws: whatever goes wrong before an answer is a Keep, with
+     * the short class name of what was thrown as its error.
      *
      * @param  array<string, mixed>  $report
      */
@@ -58,8 +60,9 @@ final class Sender
             $response = $this->request()
                 ->withBody($body, 'application/json')
                 ->post($url.self::PATH);
-        } catch (Throwable) {
-            return SendResult::keep();
+        } catch (Throwable $e) {
+            // The class only, for the hourly log line: never the message.
+            return SendResult::keep(null, class_basename(Fingerprint::className($e)));
         }
 
         return self::result($response);
@@ -87,6 +90,7 @@ final class Sender
     {
         $status = $response->status();
 
+        // Only 202, as the protocol says; a 200 (say, a proxy page) is kept and sent again.
         return match (true) {
             $status === 202 => SendResult::accepted($status),
             $status === 422, $status === 413 => SendResult::rejected($status, self::firstError($response)),

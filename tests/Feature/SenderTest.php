@@ -114,6 +114,7 @@ it('gives up within the timeouts, with no retry', function () {
 
     expect($result->isKeep())->toBeTrue()
         ->and($result->status)->toBeNull()
+        ->and($result->error)->toBe('ConnectionException')
         ->and($calls)->toBe(1);
 });
 

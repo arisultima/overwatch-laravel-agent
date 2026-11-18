@@ -20,7 +20,8 @@ final readonly class SendResult
     /**
      * @param  string  $kind  one of the constants above
      * @param  int|null  $status  the HTTP status; null when no response came
-     * @param  string|null  $error  on Rejected, the server's first validation message
+     * @param  string|null  $error  on Rejected, the server's first validation message;
+     *                              on Keep without a status, the short class name thrown
      */
     private function __construct(
         public string $kind,
@@ -38,9 +39,9 @@ final readonly class SendResult
         return new self(self::REJECTED, $status, $error);
     }
 
-    public static function keep(?int $status = null): self
+    public static function keep(?int $status = null, ?string $error = null): self
     {
-        return new self(self::KEEP, $status, null);
+        return new self(self::KEEP, $status, $error);
     }
 
     public function isAccepted(): bool

@@ -13,6 +13,8 @@ use Arisultima\OverwatchAgent\Report\Progress;
 use Arisultima\OverwatchAgent\Report\ReportBuilder;
 use Arisultima\OverwatchAgent\Report\Sender;
 use Arisultima\OverwatchAgent\Report\SendResult;
+use Arisultima\OverwatchAgent\Support\Fingerprint;
+use Arisultima\OverwatchAgent\Support\Minute;
 use Arisultima\OverwatchAgent\Support\Store;
 use Closure;
 use Illuminate\Console\Command;
@@ -30,23 +32,27 @@ use Throwable;
  * Accepted (202): each instance's last minute is marked sent, its reported
  * counters forgotten, versions marked when they went, the dropped count
  * cleared. Rejected (422 or 413): the same, since a resend cannot succeed,
- * but the minutes the server refused (and the dropped count it never saw)
- * become the dropped count of the next report, and a warning is logged.
+ * but every closed minute the server refused (and the dropped count it never
+ * saw) joins the dropped count of the next report, and a warning is logged.
  * Anything else: nothing changes, and the minutes go with the next report,
  * or are counted as dropped once out of reach.
  *
  * The exit code is 0 whatever happens: a failed send never fails the
- * scheduler.
+ * scheduler. What fails is logged by exception class only, at most once an
+ * hour per class.
  */
 final class ReportCommand extends Command
 {
     /**
-     * How long one run holds the report lock. A run gives up on the server
-     * after 5 s, so this only matters when the process dies holding it.
+     * How long one run holds the report lock: the same 5 minutes as the
+     * schedule's withoutOverlapping, so a slow run never lets another node
+     * send the same minutes. A run releases it as soon as it is done.
      */
-    public const LOCK_SECONDS = 55;
+    public const LOCK_SECONDS = 300;
 
     public const UNAUTHORIZED_LOG_SECONDS = 3600;
+
+    public const FAILURE_LOG_SECONDS = 3600;
 
     private const AT = '/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00Z$/';
 
@@ -58,10 +64,11 @@ final class ReportCommand extends Command
     {
         try {
             if (Config::enabled()) {
-                $this->locked(fn () => $this->report());
+                $this->locked(fn (bool $mark) => $this->report($mark));
             }
-        } catch (Throwable) {
+        } catch (Throwable $e) {
             // The minutes wait for the next run.
+            self::failed($e, 'the report run');
         }
 
         return self::SUCCESS;
@@ -73,9 +80,15 @@ final class ReportCommand extends Command
      * The schedule's withoutOverlapping and onOneServer lock on the app's
      * default cache, which may be per machine while the overwatch store is
      * shared; this lock is the one every reporter of the store sees. When
-     * another run holds it, this one does nothing. When the store cannot
-     * be reached the run goes ahead unlocked: nothing can be marked then,
-     * and the checks still tell Overwatch the store is down.
+     * another run holds it, this one does nothing.
+     *
+     * When taking the lock throws, the run still builds and sends, so the
+     * checks tell Overwatch the store is in trouble, but marks nothing: an
+     * unlocked run could overlap a locked one, send its minutes again or
+     * move progress back. A store without locks runs unlocked and marks,
+     * guarded by the schedule's own lock.
+     *
+     * @param  Closure(bool): void  $run  given whether it may mark
      */
     private function locked(Closure $run): void
     {
@@ -91,18 +104,21 @@ final class ReportCommand extends Command
                     return;
                 }
             }
-        } catch (Throwable) {
-            $lock = null;
+        } catch (Throwable $e) {
+            self::failed($e, 'taking the report lock');
+            $run(false);
+
+            return;
         }
 
         try {
-            $run();
+            $run(true);
         } finally {
             self::release($lock);
         }
     }
 
-    private function report(): void
+    private function report(bool $mark): void
     {
         InstanceStamp::maybe();
 
@@ -117,6 +133,8 @@ final class ReportCommand extends Command
         if ($result->isKeep()) {
             if ($result->status === 401) {
                 self::unauthorized();
+            } elseif ($result->status === null && $result->error !== null) {
+                self::failedClass($result->error, 'sending the report');
             }
 
             return;
@@ -124,10 +142,16 @@ final class ReportCommand extends Command
 
         if ($result->isRejected()) {
             self::rejected($result);
+        }
 
+        if (! $mark) {
+            return;
+        }
+
+        if ($result->isRejected()) {
             // Counted before the minutes are marked, so a run that dies in
             // between still reports the loss.
-            Progress::addDropped(self::lost($report));
+            Progress::addDropped(self::lost($report, $sent));
         }
 
         $this->markSent($report, $sent);
@@ -159,8 +183,9 @@ final class ReportCommand extends Command
                 $buckets ??= $this->laravel->make(Buckets::class);
                 // An all-digit name came back as an int key.
                 $buckets->forget((string) $instance, $minutes);
-            } catch (Throwable) {
+            } catch (Throwable $e) {
                 // Behind the progress mark, so never sent again; they expire.
+                self::failed($e, 'clearing sent counters');
             }
         }
 
@@ -202,23 +227,67 @@ final class ReportCommand extends Command
     }
 
     /**
-     * What a refused report loses: its minutes with counts, and the dropped
-     * minutes it was carrying beyond those already kept in the store (the
-     * expired and trimmed ones it worked out itself).
+     * What a refused report loses, as closed minutes not delivered, whether
+     * or not they had counts (the meaning the builder gives expired
+     * minutes): every minute it covered for each instance it would have
+     * marked, plus the expired minutes it worked out itself. Its trimmed
+     * minutes lie inside the covered ones, so they are not counted twice;
+     * the dropped count already in the store stays there.
+     *
+     * An instance never sent before is counted from its first reported
+     * minute (its trimmed minutes, older still, added on): the builder
+     * covers it from 60 minutes back, but before its first count there is
+     * no telling it existed, as the builder's own expiry rule holds.
      *
      * @param  array<string, mixed>  $report
+     * @param  array<array-key, string>  $sent
      */
-    private static function lost(array $report): int
+    private static function lost(array $report, array $sent): int
     {
-        $refused = 0;
+        $instances = [];
+        $truncated = 0;
 
         foreach (is_array($report['instances'] ?? null) ? $report['instances'] : [] as $instance) {
-            $refused += is_array($instance['minutes'] ?? null) ? count($instance['minutes']) : 0;
+            if (is_array($instance) && is_string($instance['name'] ?? null)) {
+                $instances[$instance['name']] = $instance;
+                $truncated += is_int($instance['minutes_truncated'] ?? null) ? $instance['minutes_truncated'] : 0;
+            }
+        }
+
+        $reported = self::reportedMinutes($report, $sent);
+        $covered = 0;
+
+        foreach ($sent as $name => $last) {
+            $name = (string) $name;
+            $end = Minute::parse($last)?->addMinute()->format(Minute::FORMAT);
+
+            if ($end === null) {
+                continue;
+            }
+
+            try {
+                $from = Progress::lastSent($name);
+            } catch (Throwable) {
+                $from = null;
+            }
+
+            if ($from === null) {
+                $first = $reported[$name][0] ?? null;
+                $from = $first === null ? null : Minute::parse($first)?->subMinute()->format(Minute::FORMAT);
+                $instanceTruncated = $instances[$name]['minutes_truncated'] ?? 0;
+                $covered += is_int($instanceTruncated) ? $instanceTruncated : 0;
+
+                if ($from === null) {
+                    continue;
+                }
+            }
+
+            $covered += count(Minute::range($from, $end));
         }
 
         $carried = is_int($report['dropped_minutes'] ?? null) ? $report['dropped_minutes'] : 0;
 
-        return $refused + max(0, $carried - Progress::dropped());
+        return $covered + max(0, $carried - Progress::dropped() - $truncated);
     }
 
     private static function rejected(SendResult $result): void
@@ -249,12 +318,51 @@ final class ReportCommand extends Command
         }
     }
 
+    /**
+     * Log what failed by exception class only (never the message, which may
+     * hold a path, a host or a value), at most once an hour per class.
+     */
+    private static function failed(Throwable $e, string $doing): void
+    {
+        self::failedClass(class_basename(Fingerprint::className($e)), $doing);
+    }
+
+    /**
+     * The hourly mark is kept in the overwatch store, else in the app's
+     * default store when the overwatch one fails (it may be what failed).
+     * With both down nothing is logged: the report's cache check says it.
+     */
+    private static function failedClass(string $class, string $doing): void
+    {
+        $key = Keys::failureLogged($class);
+        $stores = [static fn () => Store::cache(), static fn () => app('cache')->store()];
+
+        foreach ($stores as $store) {
+            try {
+                $first = $store()->add($key, true, self::FAILURE_LOG_SECONDS);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if ($first) {
+                try {
+                    Log::warning(sprintf('Overwatch agent: %s failed with %s.', $doing, $class));
+                } catch (Throwable) {
+                    // Nowhere left to say it.
+                }
+            }
+
+            return;
+        }
+    }
+
     private static function release(?Lock $lock): void
     {
         try {
             $lock?->release();
-        } catch (Throwable) {
+        } catch (Throwable $e) {
             // It expires.
+            self::failed($e, 'releasing the report lock');
         }
     }
 }

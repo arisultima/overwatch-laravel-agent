@@ -91,6 +91,14 @@ final class Keys
     }
 
     /**
+     * Set for an hour after a failure of this exception class is logged.
+     */
+    public static function failureLogged(string $class): string
+    {
+        return 'overwatch:failure-logged:'.self::segment($class);
+    }
+
+    /**
      * A name as a key segment. Plain names stay readable; anything with
      * spaces, colons, braces or other characters some stores refuse (or over
      * 100 characters) becomes a hash of itself.

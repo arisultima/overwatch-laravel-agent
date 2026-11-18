@@ -25,7 +25,7 @@ The package trims to fit in this order: `instances[].errors` beyond 20 groups, t
 |---|---|---|
 | 202 `{"accepted": true}` | taken | mark the reported minutes sent |
 | 401 | unknown or revoked token | keep the minutes, log once an hour |
-| 422 | schema unknown, body invalid or over a cap | mark sent (a resend cannot succeed), log a warning with the first error |
+| 422, 413 | schema unknown, body invalid or over a cap | mark sent (a resend cannot succeed), count the refused minutes into the next report's `dropped_minutes`, log a warning with the first error |
 | 429, 503 | slow down (Retry-After) | keep the minutes |
 | other, timeout, no connection | | keep the minutes |
 
@@ -40,7 +40,7 @@ The package reads nothing else from a response. Kept minutes expire after 60 min
 | `sent_at` | string | ISO 8601 UTC, seconds precision |
 | `reporter` | string | instance name of the node that built the report |
 | `window` | object | `{"from": string, "to": string}`, ISO 8601 UTC, whole minutes, `to` exclusive |
-| `dropped_minutes` | int | minutes of counts lost since the last accepted report |
+| `dropped_minutes` | int | closed minutes not delivered since the last accepted report, whether or not they had counts: expired unsent, trimmed, or in a refused report |
 | `app` | object | see App |
 | `checks` | object | the health checks, see Checks |
 | `queue_depths` | array | see Queues |

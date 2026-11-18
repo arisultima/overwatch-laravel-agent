@@ -12,6 +12,7 @@ use Arisultima\OverwatchAgent\Report\Progress;
 use Arisultima\OverwatchAgent\Report\ReportBuilder;
 use Arisultima\OverwatchAgent\Report\Sender;
 use Arisultima\OverwatchAgent\Support\Store;
+use Arisultima\OverwatchAgent\Tests\Fixtures\LockFailingStore;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
@@ -230,7 +231,8 @@ it('marks sent and warns on 422', function (int $status) {
     Log::spy();
     as_instance('web-1');
 
-    foreach (['13:04:30', '13:05:30'] as $time) {
+    // Counts at 13:03 and 13:05, nothing at 13:04.
+    foreach (['13:03:30', '13:05:30'] as $time) {
         at($time);
         app(Recorder::class)->count('http.requests');
     }
@@ -249,18 +251,19 @@ it('marks sent and warns on 422', function (int $status) {
             && ! str_contains($message, 'Bad window.'),
     );
 
-    // A resend cannot succeed, so the minutes are marked sent, and the two
-    // refused minutes are lost: the next report says so.
+    // A resend cannot succeed, so the minutes are marked sent, and the
+    // three refused closed minutes (the idle 13:04 among them) are lost:
+    // the next report says so.
     expect(Progress::lastSent('web-1'))->toBe('202611181305')
-        ->and(bucketOf('web-1', '202611181304'))->toBe([])
+        ->and(bucketOf('web-1', '202611181303'))->toBe([])
         ->and(bucketOf('web-1', '202611181305'))->toBe([])
         ->and(Versions::due())->toBeFalse()
-        ->and(Progress::dropped())->toBe(1 + 2);
+        ->and(Progress::dropped())->toBe(1 + 3);
 
     overwatchAnswers(202);
     reportAt('13:07:15');
 
-    expect(lastReport()['dropped_minutes'])->toBe(3)
+    expect(lastReport()['dropped_minutes'])->toBe(4)
         ->and(Progress::dropped())->toBe(0);
 })->with(['422' => 422, '413' => 413]);
 
@@ -274,14 +277,52 @@ it('carries a refused report\'s own dropped minutes to the next one', function (
 
     reportAt('13:30:15');
 
-    // 12:01 to 12:29 expired (29), and the one refused minute with counts.
+    // 12:01 to 12:29 expired (29), and the 60 refused closed minutes 12:30
+    // to 13:29, with counts or not.
     expect(lastReport()['dropped_minutes'])->toBe(29)
-        ->and(Progress::dropped())->toBe(29 + 1);
+        ->and(Progress::dropped())->toBe(29 + 60);
 
     overwatchAnswers(202);
     reportAt('13:31:15');
 
-    expect(lastReport()['dropped_minutes'])->toBe(30);
+    expect(lastReport()['dropped_minutes'])->toBe(89);
+});
+
+it('counts a refused report\'s trimmed minutes once', function () {
+    Log::spy();
+    at('13:10:30');
+
+    // Ten instances with ten minutes each, every minute with eight error
+    // groups: too big for 64 KB, so the trimmer cuts the oldest minutes and
+    // counts them dropped.
+    $buckets = app(Buckets::class);
+
+    foreach (range(1, 10) as $i) {
+        as_instance('web-'.$i);
+        InstanceStamp::maybe();
+        Progress::markSent('web-'.$i, '202611181300');
+
+        foreach (range(1, 10) as $m) {
+            $minute = '2026111813'.sprintf('%02d', $m);
+            $buckets->increment('web-'.$i, $minute, 'http.requests');
+
+            foreach (range(1, 8) as $e) {
+                $buckets->increment('web-'.$i, $minute, 'error.'.hash('sha256', $i.'-'.$m.'-'.$e));
+            }
+        }
+    }
+
+    overwatchAnswers(422, ['message' => 'Invalid.']);
+    reportAt('13:11:15');
+
+    $report = lastReport();
+    $truncated = array_sum(array_column($report['instances'], 'minutes_truncated'));
+
+    // 13:01 to 13:10 for each of the ten instances, trimmed or not; nothing
+    // expired, so the trimmed minutes the report counted are not added again.
+    expect($truncated)->toBeGreaterThan(0)
+        ->and($report['dropped_minutes'])->toBe($truncated)
+        ->and(Progress::dropped())->toBe(10 * 10);
 });
 
 it('logs a refused token once an hour and keeps the minutes', function () {
@@ -407,7 +448,9 @@ it('sends nothing while another run holds the report lock', function (string $dr
     at('13:05:30');
     app(Recorder::class)->count('http.requests');
 
-    $other = Store::cache()->getStore()->lock(Keys::reportLock(), 55);
+    expect(ReportCommand::LOCK_SECONDS)->toBe(300);
+
+    $other = Store::cache()->getStore()->lock(Keys::reportLock(), ReportCommand::LOCK_SECONDS);
 
     expect($other->get())->toBeTrue()
         ->and(reportAt('13:06:15'))->toBe(0);
@@ -424,7 +467,7 @@ it('sends nothing while another run holds the report lock', function (string $dr
     Http::assertSentCount(1);
 
     // The run released its own lock.
-    $mine = Store::cache()->getStore()->lock(Keys::reportLock(), 55);
+    $mine = Store::cache()->getStore()->lock(Keys::reportLock(), ReportCommand::LOCK_SECONDS);
 
     expect($mine->get())->toBeTrue();
 
@@ -458,4 +501,90 @@ it('still sends the checks when the store is down', function () {
 
     expect(lastReport()['instances'][0]['minutes'])->toBe([])
         ->and(lastReport()['checks'])->toHaveKey('cache');
+});
+
+it('sends but marks nothing when taking the lock throws', function (int $status) {
+    Log::spy();
+    Cache::extend('lock-failing', fn () => Cache::repository(new LockFailingStore));
+    config(['cache.stores.lock-failing' => ['driver' => 'lock-failing'], 'overwatch.cache_store' => 'lock-failing']);
+
+    as_instance('web-1');
+    at('13:05:30');
+    app(Recorder::class)->count('http.requests', 2);
+    Progress::addDropped(3);
+    overwatchAnswers($status, ['message' => 'Invalid.']);
+
+    $before = Store::cache()->getStore() instanceof LockFailingStore;
+
+    expect($before)->toBeTrue()
+        ->and(reportAt('13:06:15'))->toBe(0);
+
+    // The health signal still goes, with the minute in it.
+    expect(overwatchCalls())->toBe(1)
+        ->and(minutesOf(instanceIn(lastReport(), 'web-1')))->toBe(['2026-11-18T13:05:00Z']);
+
+    // Nothing is marked, forgotten, counted or cleared.
+    expect(Progress::lastSent('web-1'))->toBeNull()
+        ->and(bucketOf('web-1', '202611181305'))->toBe(['http.requests' => 2])
+        ->and(Progress::dropped())->toBe(3)
+        ->and(Versions::due())->toBeTrue();
+
+    Log::shouldHaveReceived('warning')->withArgs(
+        fn (string $message): bool => $message === 'Overwatch agent: taking the report lock failed with RuntimeException.',
+    )->once();
+})->with(['202' => 202, '422' => 422]);
+
+it('logs a swallowed failure by class only, once an hour per class', function () {
+    Log::spy();
+    as_instance('web-1');
+    overwatchAnswers(null);
+
+    reportAt('13:06:15');
+    reportAt('13:07:15');
+    reportAt('13:40:15');
+
+    $sending = fn (string $message): bool => $message === 'Overwatch agent: sending the report failed with ConnectionException.';
+
+    Log::shouldHaveReceived('warning')->withArgs($sending)->once();
+
+    // Another class has its own hour.
+    app()->bind(ReportBuilder::class, fn () => throw new LogicException('secret at /srv/app'));
+    reportAt('13:41:15');
+    reportAt('13:42:15');
+
+    Log::shouldHaveReceived('warning')->withArgs(
+        fn (string $message): bool => $message === 'Overwatch agent: the report run failed with LogicException.',
+    )->once();
+
+    Log::shouldNotHaveReceived('warning', [Mockery::on(fn (string $message): bool => str_contains($message, 'secret') || str_contains($message, 'down'))]);
+
+    app()->offsetUnset(ReportBuilder::class);
+    reportAt('14:07:20');
+
+    Log::shouldHaveReceived('warning')->withArgs($sending)->twice();
+});
+
+it('keeps the hourly failure mark in the default store when the overwatch store fails', function () {
+    Log::spy();
+    config(['cache.stores.broken' => ['driver' => 'redis', 'connection' => 'nowhere'], 'overwatch.cache_store' => 'broken']);
+    as_instance('web-1');
+    overwatchAnswers(null);
+
+    reportAt('13:06:15');
+    reportAt('13:07:15');
+
+    Log::shouldHaveReceived('warning')->withArgs(
+        fn (string $message): bool => $message === 'Overwatch agent: sending the report failed with ConnectionException.',
+    )->once();
+
+    expect(Cache::store()->has(Keys::failureLogged('ConnectionException')))->toBeTrue();
+});
+
+it('never throws when every store and the log fail', function () {
+    config(['cache.default' => 'broken', 'cache.stores.broken' => ['driver' => 'redis', 'connection' => 'nowhere'], 'overwatch.cache_store' => 'broken']);
+    Log::shouldReceive('warning')->andThrow(new RuntimeException('log'));
+    as_instance('web-1');
+    overwatchAnswers(null);
+
+    expect(reportAt('13:06:15'))->toBe(0);
 });
