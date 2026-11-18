@@ -11,14 +11,7 @@
     ],
     "require": {
         "php": "^8.3",
-        "illuminate/auth": "^11.0|^12.0|^13.0",
-        "illuminate/cache": "^11.0|^12.0|^13.0",
-        "illuminate/console": "^11.0|^12.0|^13.0",
-        "illuminate/contracts": "^11.0|^12.0|^13.0",
-        "illuminate/database": "^11.0|^12.0|^13.0",
-        "illuminate/http": "^11.0|^12.0|^13.0",
-        "illuminate/queue": "^11.0|^12.0|^13.0",
-        "illuminate/support": "^11.0|^12.0|^13.0"
+        "laravel/framework": "^11.0|^12.0|^13.0"
     },
     "require-dev": {
         "orchestra/testbench": "^9.0|^10.0|^11.0",
@@ -30,8 +23,7 @@
         "laravel/horizon": "Adds a horizon health check and supervisor status to each report.",
         "laravel/pulse": "Detected at run time only; nothing is read from it unless present.",
         "laravel/fortify": "Counts failed two-factor challenges from its events.",
-        "spatie/laravel-permission": "Counts role and permission changes from its events.",
-        "sat/diagnostics": "Shares the same exception fingerprint, so error groups line up across both."
+        "spatie/laravel-permission": "Counts role and permission changes from its events."
     },
     "autoload": {
         "psr-4": {

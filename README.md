@@ -9,7 +9,7 @@ error said. The report goes one way: nothing in the server's answer changes what
 the app does.
 
 - PHP 8.3 or newer, Laravel 11, 12 or 13.
-- No runtime dependency beyond Laravel's own components.
+- No runtime dependency beyond Laravel itself.
 - Never throws into your app. A request usually costs a few cache writes; a
   sign-in may add one role lookup, and on a database or file cache store a
   failed sign-in can wait up to about 1 s per distinct set while another
