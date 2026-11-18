@@ -117,7 +117,7 @@ final class TestCommand extends Command
             $status === null => 'The report could not be sent. Scheduled runs keep the minutes for 60 minutes.',
             $status === 401 => 'HTTP 401: Overwatch does not know this token, or it was revoked. Check OVERWATCH_TOKEN. Scheduled runs keep the minutes for 60 minutes.',
             $status === 429, $status === 503 => sprintf(
-                'HTTP %d: Overwatch asked the app to slow down. Scheduled runs keep the minutes and send them next time.',
+                'HTTP %d: the server asked the app to slow down. Scheduled runs keep the minutes and send them next time.',
                 $status,
             ),
             $status >= 300 && $status < 400 => sprintf(
