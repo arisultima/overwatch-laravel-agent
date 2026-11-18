@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Arisultima\OverwatchAgent\Probes;
 
+use Arisultima\OverwatchAgent\Report\TextLimits;
 use Arisultima\OverwatchAgent\Support\Store;
+use Arisultima\OverwatchAgent\Support\Text;
 use Composer\InstalledVersions;
 use Illuminate\Support\Carbon;
 use Throwable;
@@ -125,7 +127,10 @@ final class Versions
     /**
      * Name, pretty version and dev flag of every installed package, sorted by
      * name, at most 1500. The app's own root package and packages that are
-     * only replaced or provided (no version installed) are left out.
+     * only replaced or provided (no version installed) are left out. A
+     * package whose name or version is empty or over 255 characters is left
+     * out too and counted in `packages_truncated`, as the server would: a
+     * cut name or version would name some other release.
      *
      * @internal
      *
@@ -135,6 +140,7 @@ final class Versions
     public static function fromRawData(array $raw, string $lockHash): array
     {
         $packages = [];
+        $unsendable = [];
 
         foreach ($raw as $set) {
             if (! is_array($set) || ! is_array($set['versions'] ?? null)) {
@@ -149,7 +155,16 @@ final class Versions
                     continue;
                 }
 
-                $packages[$name] = [$name, (string) $package['pretty_version'], (bool) ($package['dev_requirement'] ?? false)];
+                $sentName = Text::clean($name);
+                $version = Text::clean($package['pretty_version']);
+
+                if (! Text::fits($sentName, TextLimits::VERSIONS_FIELD) || ! Text::fits($version, TextLimits::VERSIONS_FIELD)) {
+                    $unsendable[$name] = true;
+
+                    continue;
+                }
+
+                $packages[$name] = [$sentName, $version, (bool) ($package['dev_requirement'] ?? false)];
             }
         }
 
@@ -160,7 +175,7 @@ final class Versions
         return [
             'lock_hash' => $lockHash,
             'packages' => array_slice($packages, 0, self::MAX_PACKAGES),
-            'packages_truncated' => max(0, count($packages) - self::MAX_PACKAGES),
+            'packages_truncated' => count($unsendable) + max(0, count($packages) - self::MAX_PACKAGES),
         ];
     }
 

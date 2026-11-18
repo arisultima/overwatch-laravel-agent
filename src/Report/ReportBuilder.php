@@ -15,6 +15,7 @@ use Arisultima\OverwatchAgent\Recording\ErrorDetails;
 use Arisultima\OverwatchAgent\Support\Instance;
 use Arisultima\OverwatchAgent\Support\Minute;
 use Arisultima\OverwatchAgent\Support\Package;
+use Arisultima\OverwatchAgent\Support\Text;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Container\Container;
@@ -146,7 +147,7 @@ final class ReportBuilder
             'versions' => self::versions(),
         ];
 
-        return ['report' => Trimmer::fit($report), 'sent' => $sent];
+        return ['report' => Trimmer::fit(TextLimits::apply($report)), 'sent' => $sent];
     }
 
     /**
@@ -430,15 +431,12 @@ final class ReportBuilder
      */
     private static function app(): array
     {
-        $environment = config('app.env');
-        $timezone = config('app.timezone');
-
         return [
-            'environment' => is_string($environment) && $environment !== '' ? $environment : 'production',
+            'environment' => Text::fit(config('app.env'), TextLimits::APP),
             'debug' => filter_var(config('app.debug'), FILTER_VALIDATE_BOOLEAN),
-            'php' => PHP_VERSION,
-            'laravel' => app()->version(),
-            'timezone' => is_string($timezone) && $timezone !== '' ? $timezone : 'UTC',
+            'php' => Text::fit(PHP_VERSION, TextLimits::APP),
+            'laravel' => Text::fit(app()->version(), TextLimits::APP),
+            'timezone' => Text::fit(config('app.timezone'), TextLimits::APP),
         ];
     }
 
