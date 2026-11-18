@@ -118,3 +118,28 @@ function forgetRedisKeys(string $prefix): void
         $redis->command('del', [$key]);
     }
 }
+
+/**
+ * This instance's counters in the current minute. Tests that read them
+ * freeze time, so the minute cannot turn between recording and reading.
+ *
+ * @return array<string, int>
+ */
+function countedNow(): array
+{
+    $minute = \Arisultima\OverwatchAgent\Support\Minute::current();
+
+    return app(\Arisultima\OverwatchAgent\Recording\Buckets::class)
+        ->read(\Arisultima\OverwatchAgent\Support\Instance::name(), [$minute])[$minute];
+}
+
+/**
+ * Whether any value on the array store holds this text, serialised or not.
+ */
+function arrayStoreHolds(string $needle): bool
+{
+    $store = \Illuminate\Support\Facades\Cache::store('array')->getStore();
+    $storage = (new ReflectionProperty($store, 'storage'))->getValue($store);
+
+    return str_contains(serialize($storage), $needle);
+}

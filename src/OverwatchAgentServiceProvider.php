@@ -9,7 +9,10 @@ use Arisultima\OverwatchAgent\Recording\Buckets;
 use Arisultima\OverwatchAgent\Recording\CacheBuckets;
 use Arisultima\OverwatchAgent\Recording\DistinctSets;
 use Arisultima\OverwatchAgent\Recording\ErrorDetails;
+use Arisultima\OverwatchAgent\Recording\ExceptionRecorder;
 use Arisultima\OverwatchAgent\Recording\LockedDistinctSets;
+use Arisultima\OverwatchAgent\Recording\QueryRecorder;
+use Arisultima\OverwatchAgent\Recording\QueueRecorder;
 use Arisultima\OverwatchAgent\Recording\Recorder;
 use Arisultima\OverwatchAgent\Recording\RedisBuckets;
 use Arisultima\OverwatchAgent\Recording\RedisDistinctSets;
@@ -17,7 +20,12 @@ use Illuminate\Cache\RedisStore;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\ServiceProvider;
 
 final class OverwatchAgentServiceProvider extends ServiceProvider
@@ -83,11 +91,31 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
     }
 
     /**
-     * Event listeners that count into the minute buckets.
+     * Event listeners that count into the minute buckets. Each recorder is a
+     * singleton resolved on its first event, and the listeners are closures,
+     * so a query costs one comparison until it is slow.
      */
     private function registerRecorders(): void
     {
-        //
+        $app = $this->app;
+
+        $app->singleton(QueryRecorder::class);
+        $app->singleton(QueueRecorder::class);
+        $app->singleton(ExceptionRecorder::class, fn (): ExceptionRecorder => new ExceptionRecorder(
+            $app->make(Recorder::class),
+            $app->basePath(),
+        ));
+
+        $events = $app->make('events');
+
+        $events->listen(QueryExecuted::class, static fn (QueryExecuted $event) => $app->make(QueryRecorder::class)->handle($event));
+        $events->listen(JobProcessing::class, static fn (JobProcessing $event) => $app->make(QueueRecorder::class)->processing($event));
+        $events->listen(JobProcessed::class, static fn (JobProcessed $event) => $app->make(QueueRecorder::class)->processed($event));
+        $events->listen(JobFailed::class, static fn (JobFailed $event) => $app->make(QueueRecorder::class)->failed($event));
+
+        $this->callAfterResolving(ExceptionHandler::class, static function (ExceptionHandler $handler) use ($app): void {
+            ExceptionRecorder::attach($handler, static fn (): ExceptionRecorder => $app->make(ExceptionRecorder::class));
+        });
     }
 
     /**
@@ -96,6 +124,10 @@ final class OverwatchAgentServiceProvider extends ServiceProvider
      */
     private function registerMiddleware(): void
     {
+        // One instance for handle() and terminate(), so the start it notes
+        // is there when the request is counted.
+        $this->app->singleton(RecordRequest::class);
+
         $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
             // Neither method is on the Kernel contract; a custom kernel may lack them.
             if (! method_exists($kernel, 'hasMiddleware') || ! method_exists($kernel, 'pushMiddleware')) {

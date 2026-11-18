@@ -40,6 +40,23 @@ final class Config
         return (int) config('overwatch.slow_query_ms', 500);
     }
 
+    public static function slowRequestMs(): int
+    {
+        return (int) config('overwatch.slow_request_ms', 1000);
+    }
+
+    /**
+     * Route names of the sign-in endpoints, for counting throttled sign-ins.
+     *
+     * @return list<string>
+     */
+    public static function signinRoutes(): array
+    {
+        $routes = config('overwatch.signin_routes', []);
+
+        return is_array($routes) ? array_values(array_map('strval', $routes)) : [];
+    }
+
     /**
      * @return list<string>
      */
